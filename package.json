@@ -16,6 +16,7 @@
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "test:cases": "bun run scripts/run-yaml-tests.ts",
+    "build:executables": "bun run scripts/build-executables.ts",
     "mcp": "bun run src/cli.ts mcp",
     "mcp:inspect": "bunx @modelcontextprotocol/inspector@2.4.0 bun run src/cli.ts mcp",
     "grammar:lint": "ebnf2railroad --lint src/grammar.ebnf --no-target",

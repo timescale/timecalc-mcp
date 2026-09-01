@@ -1,8 +1,7 @@
 #!/usr/bin/env bun
 
 import { evaluateRequest, formatSerializedError } from "./service";
-
-const VERSION = "0.0.0";
+import { VERSION } from "./version";
 
 type Command = "eval" | "validate" | "grammar" | "mcp";
 

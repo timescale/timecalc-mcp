@@ -4,9 +4,10 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import * as z from "zod/v4";
 import { OPERATOR_CATALOG } from "./operators/catalog";
 import { evaluateRequest, type EvaluationRequest } from "./service";
+import { VERSION } from "./version";
 
 export const MCP_SERVER_NAME = "timecalc";
-export const MCP_SERVER_VERSION = "0.0.0";
+export const MCP_SERVER_VERSION = VERSION;
 export const EVALUATE_TOOL_NAME = "evaluate_date_expression";
 
 const inputSchema = z.object({

@@ -1,0 +1,213 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: Test release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify release tag
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Tag must have vX.Y.Z format: $tag" >&2
+            exit 1
+          fi
+          git fetch origin main
+          commit="$(git rev-list -n 1 "$tag")"
+          if ! git merge-base --is-ancestor "$commit" origin/main; then
+            echo "Release tag $tag does not point to a commit on main" >&2
+            exit 1
+          fi
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Type-check
+        run: bun run typecheck
+
+      - name: Lint grammar
+        run: bun run grammar:lint
+
+      - name: Run test suite
+        run: bun test
+
+      - name: Run YAML conformance runner
+        run: bun run test:cases
+
+  build:
+    name: Build ${{ matrix.target }}
+    needs: test
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-amd64
+            runner: ubuntu-latest
+          - target: linux-arm64
+            runner: ubuntu-latest
+          - target: darwin-arm64
+            runner: macos-14
+          - target: windows-amd64
+            runner: ubuntu-latest
+          - target: windows-arm64
+            runner: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Read version from tag
+        id: version
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Tag must have vX.Y.Z format: $tag" >&2
+            exit 1
+          fi
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build executable
+        run: >-
+          bun run build:executables --
+          --version "${{ steps.version.outputs.version }}"
+          --target "${{ matrix.target }}"
+
+      - name: Verify Linux AMD64 executable
+        if: matrix.target == 'linux-amd64'
+        shell: bash
+        run: |
+          executable="dist/timecalc-v${{ steps.version.outputs.version }}-linux-amd64"
+          chmod +x "$executable"
+          test "$("$executable" --version)" = "${{ steps.version.outputs.version }}"
+          test "$("$executable" '(add 2025-01-31 P1M)')" = "2025-02-28"
+
+      - name: Ad-hoc sign macOS ARM64 executable
+        if: matrix.target == 'darwin-arm64'
+        shell: bash
+        run: |
+          executable="dist/timecalc-v${{ steps.version.outputs.version }}-darwin-arm64"
+          chmod +x "$executable"
+          codesign --force --sign - "$executable"
+
+      - name: Verify macOS ARM64 executable
+        if: matrix.target == 'darwin-arm64' && runner.arch == 'ARM64'
+        shell: bash
+        run: |
+          executable="dist/timecalc-v${{ steps.version.outputs.version }}-darwin-arm64"
+          test "$("$executable" --version)" = "${{ steps.version.outputs.version }}"
+          test "$("$executable" '(add 2025-01-31 P1M)')" = "2025-02-28"
+
+      - name: Upload executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: executable-${{ matrix.target }}
+          path: dist/timecalc-*
+          if-no-files-found: error
+          retention-days: 1
+
+  release:
+    name: Publish GitHub release
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Read version from tag
+        id: version
+        shell: bash
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Download executables
+        uses: actions/download-artifact@v4
+        with:
+          pattern: executable-*
+          path: dist
+          merge-multiple: true
+
+      - name: Package release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ steps.version.outputs.version }}"
+          mkdir -p release staging
+
+          package_tar() {
+            target="$1"
+            asset="timecalc-v${version}-${target}"
+            mkdir -p "staging/${asset}"
+            cp "dist/${asset}" "staging/${asset}/timecalc"
+            chmod +x "staging/${asset}/timecalc"
+            cp LICENSE NOTICE "staging/${asset}/"
+            tar -C "staging/${asset}" -czf "release/${asset}.tar.gz" timecalc LICENSE NOTICE
+          }
+
+          package_zip() {
+            target="$1"
+            asset="timecalc-v${version}-${target}"
+            mkdir -p "staging/${asset}"
+            cp "dist/${asset}.exe" "staging/${asset}/timecalc.exe"
+            cp LICENSE NOTICE "staging/${asset}/"
+            (cd "staging/${asset}" && zip -q "../../release/${asset}.zip" timecalc.exe LICENSE NOTICE)
+          }
+
+          package_tar linux-amd64
+          package_tar linux-arm64
+          package_tar darwin-arm64
+          package_zip windows-amd64
+          package_zip windows-arm64
+
+          (cd release && sha256sum timecalc-* > SHA256SUMS)
+          ls -lh release
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: timecalc ${{ github.ref_name }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            release/*.tar.gz
+            release/*.zip
+            release/SHA256SUMS

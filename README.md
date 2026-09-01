@@ -535,11 +535,49 @@ bun run grammar:lint
 bun run grammar:diagram
 ```
 
-Build a standalone Bun-targeted bundle:
+### Standalone executables
+
+Build all release executables with Bun:
 
 ```bash
-bun build src/cli.ts --target=bun --outfile=dist/timecalc.js
+bun run build:executables -- --version 1.2.3
 ```
+
+Outputs are written to `dist/`:
+
+| Target | Output |
+|---|---|
+| Linux AMD64 | `timecalc-v1.2.3-linux-amd64` |
+| Linux ARM64 | `timecalc-v1.2.3-linux-arm64` |
+| macOS ARM64 | `timecalc-v1.2.3-darwin-arm64` |
+| Windows AMD64 | `timecalc-v1.2.3-windows-amd64.exe` |
+| Windows ARM64 | `timecalc-v1.2.3-windows-arm64.exe` |
+
+The executables contain the Bun runtime and all runtime dependencies; users do not need to install Bun. The supplied version is embedded in CLI and MCP server metadata.
+
+Build a subset by repeating `--target`:
+
+```bash
+bun run build:executables -- \
+  --version 1.2.3 \
+  --target linux-amd64 \
+  --target darwin-arm64
+```
+
+Use `--outdir PATH` to change the output directory. Run `bun run build:executables -- --help` for the complete interface.
+
+### Automation
+
+The GitHub Actions workflow in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on pushes to `main`, pull requests, and manual dispatches. It installs the locked dependencies with Bun 1.4.0, type-checks the project, lints the grammar, runs the Bun and YAML test suites, and verifies a production bundle.
+
+The release workflow in [`.github/workflows/release.yml`](.github/workflows/release.yml) runs when `main` is tagged with an exact `vX.Y.Z` tag, for example:
+
+```bash
+git tag v1.2.3
+git push origin v1.2.3
+```
+
+It reruns all checks, builds the five supported executables, packages each with `LICENSE` and `NOTICE`, generates `SHA256SUMS`, and publishes a GitHub Release with generated release notes. Unix assets use `.tar.gz`; Windows assets use `.zip`. macOS AMD64 is intentionally not built.
 
 The automated suite covers:
 
