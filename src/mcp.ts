@@ -159,7 +159,7 @@ Quoted values are strings.
 
 Examples:
 (add 2025-01-31 P1M)
-(until 2025-01-01 2025-12-31 :largest-unit "months")
+(subtract 2025-12-31 2025-01-01 :largest-unit "months")
 (add 2025-03-08T12:00:00-05:00[America/New_York] P1D)
 
 For a zoned date-time, P1D means one calendar day; PT24H means exactly 24 elapsed hours.

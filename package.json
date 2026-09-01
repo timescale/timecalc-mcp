@@ -20,7 +20,9 @@
     "mcp": "bun run src/cli.ts mcp",
     "mcp:inspect": "bunx @modelcontextprotocol/inspector@2.4.0 bun run src/cli.ts mcp",
     "grammar:lint": "ebnf2railroad --lint src/grammar.ebnf --no-target",
-    "grammar:diagram": "mkdir -p docs && ebnf2railroad --title 'timecalc DSL Grammar' src/grammar.ebnf --target docs/grammar.html"
+    "grammar:diagram": "bun run grammar:diagram:html && bun run grammar:diagram:markdown",
+    "grammar:diagram:html": "mkdir -p docs && ebnf2railroad --title 'timecalc DSL Grammar' src/grammar.ebnf --target docs/grammar.html",
+    "grammar:diagram:markdown": "mkdir -p docs && ebnf2railroad --title 'timecalc DSL Grammar' src/grammar.ebnf --target docs/grammar.md"
   },
   "devDependencies": {
     "@types/bun": "1.4.0",

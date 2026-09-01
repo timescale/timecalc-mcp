@@ -19,14 +19,32 @@ describe("parser", () => {
     expect(parse('"P1M"')).toMatchObject({ kind: "string", value: "P1M" });
   });
 
+  test("parses and preserves nested expressions", () => {
+    const node = parse("(day-of-week (add 2025-01-31 P1M))");
+    expect(node).toMatchObject({
+      kind: "call",
+      operator: "day-of-week",
+      positional: [
+        {
+          kind: "call",
+          operator: "add",
+          positional: [
+            { kind: "temporal-literal", temporalType: "date" },
+            { kind: "temporal-literal", temporalType: "duration" },
+          ],
+        },
+      ],
+    });
+  });
+
   test("parses calls, comments, and keyword arguments", () => {
     const node = parse(`
       ; difference
-      (until 2025-01-01 2025-12-31 :largest-unit "months")
+      (subtract 2025-12-31 2025-01-01 :largest-unit "months")
     `);
     expect(node.kind).toBe("call");
     if (node.kind === "call") {
-      expect(node.operator).toBe("until");
+      expect(node.operator).toBe("subtract");
       expect(node.positional).toHaveLength(2);
       expect(node.keywords.get("largest-unit")).toMatchObject({ kind: "string", value: "months" });
     }
@@ -39,7 +57,7 @@ describe("parser", () => {
   });
 
   test("rejects positional arguments after options", () => {
-    expect(() => parse('(until 2025-01-01 :largest-unit "day" 2025-01-02)')).toThrow(
+    expect(() => parse('(subtract 2025-01-01 :largest-unit "day" 2025-01-02)')).toThrow(
       expect.objectContaining({ code: "PARSE_ERROR" }),
     );
   });

@@ -195,7 +195,7 @@ Usage:
 
 Examples:
   timecalc '(add 2025-01-31 P1M)'
-  timecalc --json '(until 2025-01-01 2025-12-31 :largest-unit "months")'
+  timecalc --json '(subtract 2025-12-31 2025-01-01 :largest-unit "months")'
   echo '(day-of-week 2025-06-01)' | timecalc --stdin
 
 Options:

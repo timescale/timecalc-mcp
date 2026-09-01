@@ -28,23 +28,9 @@ export const OPERATOR_CATALOG = [
   {
     name: "subtract",
     category: "arithmetic",
-    signature: "(subtract temporal duration [:overflow string])",
-    description: "Subtract a duration from a date, instant, or zoned date-time.",
-    options: ["overflow"],
-  },
-  {
-    name: "until",
-    category: "arithmetic",
-    signature: "(until temporal temporal [difference options])",
-    description: "Return the duration from the first compatible value to the second.",
-    options: ["largest-unit", "smallest-unit", "rounding-increment", "rounding-mode"],
-  },
-  {
-    name: "since",
-    category: "arithmetic",
-    signature: "(since temporal temporal [difference options])",
-    description: "Return the duration from the second compatible value to the first.",
-    options: ["largest-unit", "smallest-unit", "rounding-increment", "rounding-mode"],
+    signature: "(subtract temporal duration-or-compatible-temporal [options])",
+    description: "Subtract a duration from a Temporal value, or return the signed duration left minus right.",
+    options: ["overflow", "largest-unit", "smallest-unit", "rounding-increment", "rounding-mode"],
   },
   {
     name: "compare",

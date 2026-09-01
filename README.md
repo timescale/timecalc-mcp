@@ -42,9 +42,9 @@ Expressions use S-expression syntax:
 For example:
 
 ```lisp
-(until
-  2025-01-01
+(subtract
   2025-12-31
+  2025-01-01
   :largest-unit "months")
 ```
 
@@ -57,7 +57,7 @@ There must be exactly one top-level expression. Positional arguments must come b
   P1D)
 ```
 
-The canonical grammar is [`src/grammar.ebnf`](src/grammar.ebnf), written in ISO/IEC 14977 EBNF. Generated railroad diagrams are available in [`docs/grammar.html`](docs/grammar.html).
+The canonical grammar is [`src/grammar.ebnf`](src/grammar.ebnf), written in ISO/IEC 14977 EBNF. Generated railroad diagrams are available as [HTML](docs/grammar.html) and [Markdown](docs/grammar.md).
 
 ### Temporal literals
 
@@ -113,12 +113,29 @@ The machine-readable source of truth is [`src/operators/catalog.ts`](src/operato
 |---|---|---|
 | `add` | `(add temporal duration [:overflow "constrain"\|"reject"])` | Same type as the first argument |
 | `subtract` | `(subtract temporal duration [:overflow "constrain"\|"reject"])` | Same type as the first argument |
-| `until` | `(until temporal temporal [difference options])` | `Duration` |
-| `since` | `(since temporal temporal [difference options])` | `Duration` |
+| `subtract` | `(subtract temporal compatible-temporal [difference options])` | `Duration` |
 
-`add` and `subtract` accept a `PlainDate`, `Instant`, or `ZonedDateTime` followed by a `Duration`. The `:overflow` option applies to date and zoned date-time arithmetic, not instant arithmetic.
+`add` accepts a `PlainDate`, `Instant`, or `ZonedDateTime` followed by a `Duration`.
 
-`until` and `since` require operands of the same Temporal type. Supported difference options are:
+`subtract` is overloaded but always means **left minus right**:
+
+- when the right operand is a `Duration`, it subtracts that amount and returns the same type as the left operand;
+- when both operands have the same Temporal type, it returns the signed duration between them.
+
+```lisp
+(subtract 2025-03-03 P2D)
+; 2025-03-01
+
+(subtract 2025-03-03 2025-03-01)
+; P2D
+
+(subtract 2025-03-01 2025-03-03)
+; -P2D
+```
+
+The `:overflow` option applies when adding or subtracting a duration from a date or zoned date-time, not instant arithmetic.
+
+Subtracting two Temporal values supports these difference options:
 
 ```text
 :largest-unit string
@@ -130,7 +147,7 @@ The machine-readable source of truth is [`src/operators/catalog.ts`](src/operato
 Example:
 
 ```lisp
-(until 2025-01-01 2025-12-31 :largest-unit "months")
+(subtract 2025-12-31 2025-01-01 :largest-unit "months")
 ; P11M30D
 ```
 
@@ -528,11 +545,18 @@ Run strict TypeScript checking:
 bun run typecheck
 ```
 
-Lint and regenerate the grammar diagrams:
+Lint and regenerate both the HTML and Markdown grammar diagrams:
 
 ```bash
 bun run grammar:lint
 bun run grammar:diagram
+```
+
+Generate only one format when needed:
+
+```bash
+bun run grammar:diagram:html
+bun run grammar:diagram:markdown
 ```
 
 ### Standalone executables

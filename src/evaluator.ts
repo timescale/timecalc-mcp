@@ -83,11 +83,9 @@ function invoke(
 ): RuntimeValue {
   switch (operator) {
     case "add":
+      return add(args, options, span);
     case "subtract":
-      return arithmetic(operator, args, options, span);
-    case "until":
-    case "since":
-      return difference(operator, args, options, span);
+      return subtract(args, options, span);
     case "compare":
       return compare(args, options, span);
     case "equals":
@@ -103,37 +101,55 @@ function invoke(
   }
 }
 
-function arithmetic(
-  operator: "add" | "subtract",
+function add(
   args: RuntimeValue[],
   options: ReadonlyMap<string, RuntimeValue>,
   span: Span,
 ): RuntimeValue {
-  exactArity(operator, args, 2, span);
-  const receiver = expectOneOf(operator, args[0], ["date", "instant", "zoned-date-time"], 1, span);
-  const duration = expectType(operator, args[1], "duration", 2, span);
+  exactArity("add", args, 2, span);
+  const receiver = expectOneOf("add", args[0], ["date", "instant", "zoned-date-time"], 1, span);
+  const duration = expectType("add", args[1], "duration", 2, span);
   const allowed = receiver.type === "instant" ? [] : ["overflow"];
-  const temporalOptions = temporalOptionsFor(operator, options, allowed, span);
-  const result = receiver.value[operator](duration.value, temporalOptions);
-  return { type: receiver.type, value: result };
+  const temporalOptions = temporalOptionsFor("add", options, allowed, span);
+  return { type: receiver.type, value: receiver.value.add(duration.value, temporalOptions) };
 }
 
-function difference(
-  operator: "until" | "since",
+function subtract(
   args: RuntimeValue[],
   options: ReadonlyMap<string, RuntimeValue>,
   span: Span,
 ): RuntimeValue {
-  exactArity(operator, args, 2, span);
-  const left = expectOneOf(operator, args[0], ["date", "instant", "zoned-date-time"], 1, span);
-  expectType(operator, args[1], left.type, 2, span);
+  exactArity("subtract", args, 2, span);
+  const left = expectOneOf(
+    "subtract",
+    args[0],
+    ["date", "instant", "zoned-date-time"],
+    1,
+    span,
+  );
+  const right = args[1];
+
+  if (right.type === "duration") {
+    const allowed = left.type === "instant" ? [] : ["overflow"];
+    const temporalOptions = temporalOptionsFor("subtract", options, allowed, span);
+    return { type: left.type, value: left.value.subtract(right.value, temporalOptions) };
+  }
+
+  if (right.type !== left.type) {
+    throw new TimecalcError(
+      "TYPE_MISMATCH",
+      `subtract expected duration or ${left.type} as argument 2, received ${right.type}`,
+      span,
+    );
+  }
+
   const temporalOptions = temporalOptionsFor(
-    operator,
+    "subtract",
     options,
     ["largest-unit", "smallest-unit", "rounding-increment", "rounding-mode"],
     span,
   );
-  return { type: "duration", value: left.value[operator](args[1].value, temporalOptions) };
+  return { type: "duration", value: left.value.since(right.value, temporalOptions) };
 }
 
 function compare(

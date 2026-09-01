@@ -22,9 +22,38 @@ describe("evaluator", () => {
     );
   });
 
-  test("calculates differences with Temporal options", () => {
-    expect(run('(until 2025-01-01 2025-12-31 :largest-unit "months")').value.toString()).toBe(
+  test("subtracts compatible Temporal values to calculate signed differences", () => {
+    expect(run('(subtract 2025-12-31 2025-01-01 :largest-unit "months")').value.toString()).toBe(
       "P11M30D",
+    );
+    expect(run("(subtract 2025-01-01 2025-01-03)").value.toString()).toBe("-P2D");
+    expect(
+      run(
+        '(subtract 2025-01-03T00:00:00Z 2025-01-01T12:00:00Z :largest-unit "hours")',
+      ).value.toString(),
+    ).toBe("PT36H");
+    expect(
+      run(
+        '(subtract 2025-03-09T12:00:00-04:00[America/New_York] 2025-03-08T12:00:00-05:00[America/New_York] :largest-unit "days")',
+      ).value.toString(),
+    ).toBe("P1D");
+  });
+
+  test("does not expose until or since aliases", () => {
+    expect(() => run("(until 2025-01-01 2025-01-02)")).toThrow(
+      expect.objectContaining({ code: "UNKNOWN_OPERATOR" }),
+    );
+    expect(() => run("(since 2025-01-02 2025-01-01)")).toThrow(
+      expect.objectContaining({ code: "UNKNOWN_OPERATOR" }),
+    );
+  });
+
+  test("validates subtract options according to its operand types", () => {
+    expect(() => run('(subtract 2025-03-03 P2D :largest-unit "days")')).toThrow(
+      expect.objectContaining({ code: "UNKNOWN_OPTION" }),
+    );
+    expect(() => run('(subtract 2025-03-03 2025-03-01 :overflow "constrain")')).toThrow(
+      expect.objectContaining({ code: "UNKNOWN_OPTION" }),
     );
   });
 
