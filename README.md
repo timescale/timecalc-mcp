@@ -417,6 +417,12 @@ INTERNAL_ERROR
 
 Stack traces, host paths, and environment details are not returned. In stdio mode, stdout is reserved exclusively for MCP protocol messages; diagnostics go to stderr.
 
+### Agent Skill
+
+A portable [Agent Skill](https://agentskills.io) for teaching compatible agents when and how to use the MCP server is included at [`.agents/skills/timecalc/SKILL.md`](.agents/skills/timecalc/SKILL.md).
+
+Clients that discover project skills from `.agents/skills/` can use it directly. For other clients, copy the `.agents/skills/timecalc/` directory into that client's skill directory. The skill assumes the timecalc MCP server is already configured and exposes `evaluate_date_expression`.
+
 ### MCP client configuration
 
 During development, use an absolute source path:
