@@ -1,0 +1,216 @@
+(* timecalc expression grammar -- ISO/IEC 14977 EBNF *)
+
+program
+  = spacing, expression, spacing
+  ;
+
+expression
+  = call
+  | temporal literal
+  | string
+  | number
+  | boolean
+  ;
+
+call
+  = "(", spacing, operator, { separator, argument }, spacing, ")"
+  ;
+
+argument
+  = keyword argument
+  | expression
+  ;
+
+keyword argument
+  = keyword, separator, expression
+  ;
+
+operator
+  = name
+  ;
+
+keyword
+  = ":", name
+  ;
+
+temporal literal
+  = zoned date time
+  | instant
+  | plain date
+  | duration
+  ;
+
+plain date
+  = year, "-", two digits, "-", two digits
+  ;
+
+instant
+  = plain date, "T", time, offset
+  ;
+
+zoned date time
+  = plain date, "T", time, offset, "[", time zone identifier, "]"
+  ;
+
+time
+  = two digits, ":", two digits,
+    [ ":", two digits, [ fraction ] ]
+  ;
+
+fraction
+  = ".", digit, { digit }
+  ;
+
+offset
+  = "Z"
+  | ( "+" | "-" ), two digits, ":", two digits
+  ;
+
+time zone identifier
+  = time zone character, { time zone character }
+  ;
+
+time zone character
+  = letter
+  | digit
+  | "."
+  | "_"
+  | "+"
+  | ":"
+  | "/"
+  | "-"
+  ;
+
+duration
+  = [ "+" | "-" ], "P", duration character, { duration character }
+  ;
+
+duration character
+  = digit
+  | "Y"
+  | "M"
+  | "W"
+  | "D"
+  | "T"
+  | "H"
+  | "S"
+  | "."
+  ;
+
+boolean
+  = "true"
+  | "false"
+  ;
+
+number
+  = [ "-" ], digit, { digit }, [ ".", digit, { digit } ]
+  ;
+
+string
+  = quotation mark, { string character | escape }, quotation mark
+  ;
+
+string character
+  = ? Unicode scalar value except quotation mark, reverse solidus, and control characters ?
+  ;
+
+escape
+  = backslash,
+    ( quotation mark
+    | backslash
+    | "/"
+    | "b"
+    | "f"
+    | "n"
+    | "r"
+    | "t"
+    | "u", hex digit, hex digit, hex digit, hex digit
+    )
+  ;
+
+quotation mark
+  = '"'
+  ;
+
+backslash
+  = ? U+005C REVERSE SOLIDUS ?
+  ;
+
+hex digit
+  = digit
+  | "A"
+  | "B"
+  | "C"
+  | "D"
+  | "E"
+  | "F"
+  | "a"
+  | "b"
+  | "c"
+  | "d"
+  | "e"
+  | "f"
+  ;
+
+year
+  = digit, digit, digit, digit
+  ;
+
+two digits
+  = digit, digit
+  ;
+
+digit
+  = "0"
+  | "1"
+  | "2"
+  | "3"
+  | "4"
+  | "5"
+  | "6"
+  | "7"
+  | "8"
+  | "9"
+  ;
+
+name
+  = name start, { name part }
+  ;
+
+name start
+  = letter
+  ;
+
+name part
+  = letter
+  | digit
+  | "_"
+  | "-"
+  ;
+
+letter
+  = ? ASCII letter A-Z or a-z ?
+  ;
+
+spacing
+  = { white space | comment }
+  ;
+
+separator
+  = ( white space | comment ), { white space | comment }
+  ;
+
+white space
+  = ? U+0020 SPACE ?
+  | ? U+0009 CHARACTER TABULATION ?
+  | ? U+000A LINE FEED ?
+  | ? U+000D CARRIAGE RETURN ?
+  ;
+
+comment
+  = ";", { comment character }
+  ;
+
+comment character
+  = ? Unicode scalar value except U+000A LINE FEED and U+000D CARRIAGE RETURN ?
+  ;

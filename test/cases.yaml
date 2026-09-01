@@ -1,0 +1,155 @@
+- description: Plain date literal
+  expression: '2025-01-31'
+  expected: '2025-01-31'
+
+- description: Instant literal is normalized to UTC
+  expression: '2025-06-01T12:00:00-05:00'
+  expected: '2025-06-01T17:00:00Z'
+
+- description: Zoned date-time literal preserves its zone
+  expression: '2025-06-01T08:00:00-04:00[America/New_York]'
+  expected: '2025-06-01T08:00:00-04:00[America/New_York]'
+
+- description: Duration literal
+  expression: 'P1M3DT4H'
+  expected: 'P1M3DT4H'
+
+- description: Add a month at the end of a month using constrained overflow
+  expression: '(add 2025-01-31 P1M)'
+  expected: '2025-02-28'
+
+- description: Add a day in a leap year
+  expression: '(add 2024-02-28 P1D)'
+  expected: '2024-02-29'
+
+- description: Subtract a day from a date
+  expression: '(subtract 2025-03-01 P1D)'
+  expected: '2025-02-28'
+
+- description: Add one calendar day across spring-forward DST
+  expression: '(add 2025-03-08T12:00:00-05:00[America/New_York] P1D)'
+  expected: '2025-03-09T12:00:00-04:00[America/New_York]'
+
+- description: Add exactly 24 elapsed hours across spring-forward DST
+  expression: '(add 2025-03-08T12:00:00-05:00[America/New_York] PT24H)'
+  expected: '2025-03-09T13:00:00-04:00[America/New_York]'
+
+- description: Subtract elapsed hours from an instant
+  expression: '(subtract 2025-03-01T00:00:00Z PT48H)'
+  expected: '2025-02-27T00:00:00Z'
+
+- description: Difference between dates using months as the largest unit
+  expression: '(until 2025-01-01 2025-12-31 :largest-unit "months")'
+  expected: 'P11M30D'
+
+- description: Difference in the reverse direction with since
+  expression: '(since 2025-01-03 2025-01-01)'
+  expected: 'P2D'
+
+- description: Compare ordered dates
+  expression: '(compare 2025-01-01 2025-01-02)'
+  expected: '-1'
+
+- description: Compare equivalent instants represented with different offsets
+  expression: '(compare 2025-06-01T12:00:00Z 2025-06-01T08:00:00-04:00)'
+  expected: '0'
+
+- description: Compare a calendar day and 24 hours relative to a DST boundary
+  expression: '(compare P1D PT24H :relative-to 2025-03-08T12:00:00-05:00[America/New_York])'
+  expected: '-1'
+
+- description: Equal dates
+  expression: '(equals 2025-01-01 2025-01-01)'
+  expected: 'true'
+
+- description: Durations use structural equality
+  expression: '(equals P1D PT24H)'
+  expected: 'false'
+
+- description: Round an instant to the nearest minute
+  expression: '(round 2025-01-01T12:34:56Z :smallest-unit "minute")'
+  expected: '2025-01-01T12:35:00Z'
+
+- description: Round a duration to hours
+  expression: '(round PT1H31M :smallest-unit "hour")'
+  expected: 'PT2H'
+
+- description: Convert an instant to a named time zone
+  expression: '(with-time-zone 2025-06-01T12:00:00Z "America/New_York")'
+  expected: '2025-06-01T08:00:00-04:00[America/New_York]'
+
+- description: Change the display zone of a zoned date-time without changing its instant
+  expression: '(with-time-zone 2025-06-01T08:00:00-04:00[America/New_York] "Europe/London")'
+  expected: '2025-06-01T13:00:00+01:00[Europe/London]'
+
+- description: Convert a zoned date-time to an instant
+  expression: '(to-instant 2025-06-01T08:00:00-04:00[America/New_York])'
+  expected: '2025-06-01T12:00:00Z'
+
+- description: Inspect year
+  expression: '(year 2025-06-01)'
+  expected: '2025'
+
+- description: Inspect month
+  expression: '(month 2025-06-01)'
+  expected: '6'
+
+- description: Inspect day
+  expression: '(day 2025-06-01)'
+  expected: '1'
+
+- description: Inspect zoned hour
+  expression: '(hour 2025-06-01T08:02:03-04:00[America/New_York])'
+  expected: '8'
+
+- description: Inspect zoned minute
+  expression: '(minute 2025-06-01T08:02:03-04:00[America/New_York])'
+  expected: '2'
+
+- description: Inspect zoned second
+  expression: '(second 2025-06-01T08:02:03-04:00[America/New_York])'
+  expected: '3'
+
+- description: Inspect ISO day of week
+  expression: '(day-of-week 2025-06-01)'
+  expected: '7'
+
+- description: Inspect day of year
+  expression: '(day-of-year 2025-06-01)'
+  expected: '152'
+
+- description: Inspect ISO week of year
+  expression: '(week-of-year 2025-06-01)'
+  expected: '22'
+
+- description: Inspect days in February
+  expression: '(days-in-month 2025-02-01)'
+  expected: '28'
+
+- description: Inspect days in a leap year
+  expression: '(days-in-year 2024-02-01)'
+  expected: '366'
+
+- description: Inspect months in an ISO year
+  expression: '(months-in-year 2025-01-01)'
+  expected: '12'
+
+- description: Inspect UTC offset
+  expression: '(offset 2025-06-01T08:00:00-04:00[America/New_York])'
+  expected: '-04:00'
+
+- description: Inspect time-zone identifier
+  expression: '(time-zone-id 2025-06-01T08:00:00-04:00[America/New_York])'
+  expected: 'America/New_York'
+
+- description: Inspect calendar identifier
+  expression: '(calendar-id 2025-01-01)'
+  expected: 'iso8601'
+
+- description: Comments and multiline whitespace are accepted
+  expression: |
+    ; Calculate the next day
+    (add
+      2025-12-31
+      P1D)
+  expected: '2026-01-01'
