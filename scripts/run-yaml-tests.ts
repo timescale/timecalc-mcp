@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 
-import { evaluateYamlTestCase, loadYamlTestCases } from "./yaml-cases";
+import { evaluateYamlTestCase, expectedOutput, loadYamlTestCases } from "./yaml-cases";
 
 const path = Bun.argv[2] ?? `${import.meta.dir}/../test/cases.yaml`;
 
@@ -11,13 +11,13 @@ try {
   for (const [index, testCase] of cases.entries()) {
     try {
       const actual = evaluateYamlTestCase(testCase);
-      if (actual === testCase.expected) {
+      if (actual === expectedOutput(testCase)) {
         console.log(`✓ ${index + 1}. ${testCase.description}`);
       } else {
         failures++;
         console.error(`✗ ${index + 1}. ${testCase.description}`);
         console.error(`  expression: ${format(testCase.expression)}`);
-        console.error(`  expected:   ${JSON.stringify(testCase.expected)}`);
+        console.error(`  expected:   ${JSON.stringify(expectedOutput(testCase))}`);
         console.error(`  actual:     ${JSON.stringify(actual)}`);
       }
     } catch (error) {

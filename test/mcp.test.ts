@@ -68,9 +68,20 @@ describe("MCP handler", () => {
 
   for (const fixture of yamlCases) {
     test(`YAML parity: ${fixture.description}`, () => {
-      const result = handleEvaluateDateExpression({ expression: fixture.expression });
-      expect(result.isError).not.toBe(true);
-      expect(textOf(result)).toBe(fixture.expected);
+      const result = handleEvaluateDateExpression({
+        expression: fixture.expression,
+        ...(fixture.now !== undefined ? { now: fixture.now } : {}),
+        ...(fixture.defaultTimeZone !== undefined ? { defaultTimeZone: fixture.defaultTimeZone } : {}),
+        ...(fixture.defaultCalendar !== undefined ? { defaultCalendar: fixture.defaultCalendar } : {}),
+      });
+      if (fixture.error !== undefined) {
+        expect(result.isError).toBe(true);
+        const structured = result.structuredContent as { error?: { code?: string } };
+        expect(structured.error?.code).toBe(fixture.error);
+      } else {
+        expect(result.isError).not.toBe(true);
+        expect(textOf(result)).toBe(fixture.expected);
+      }
     });
   }
 });

@@ -1,11 +1,13 @@
-import { evaluate } from "../src/evaluator";
-import { parse } from "../src/parser";
-import { humanResult } from "../src/serialize";
+import { evaluateRequest } from "../src/service";
 
 export interface YamlTestCase {
   description: string;
   expression: string;
-  expected: string;
+  expected?: string;
+  error?: string;
+  now?: string;
+  defaultTimeZone?: string;
+  defaultCalendar?: string;
 }
 
 export async function loadYamlTestCases(path: string): Promise<YamlTestCase[]> {
@@ -18,8 +20,28 @@ export async function loadYamlTestCases(path: string): Promise<YamlTestCase[]> {
   return parsed.map((value, index) => validateCase(value, index, path));
 }
 
+/**
+ * Evaluate a case and return the string to compare against `expectedOutput`.
+ * On success this is the human-readable value; on failure it is the error code,
+ * so error cases can assert the failure they expect.
+ */
 export function evaluateYamlTestCase(testCase: YamlTestCase): string {
-  return humanResult(evaluate(parse(testCase.expression)));
+  const outcome = evaluateRequest({
+    expression: testCase.expression,
+    ...(testCase.now !== undefined ? { now: testCase.now } : {}),
+    ...(testCase.defaultTimeZone !== undefined
+      ? { defaultTimeZone: testCase.defaultTimeZone }
+      : {}),
+    ...(testCase.defaultCalendar !== undefined
+      ? { defaultCalendar: testCase.defaultCalendar }
+      : {}),
+  });
+  return outcome.ok ? outcome.text : outcome.response.error.code;
+}
+
+/** The target string a case's evaluation should equal. */
+export function expectedOutput(testCase: YamlTestCase): string {
+  return testCase.error ?? (testCase.expected as string);
 }
 
 function validateCase(value: unknown, index: number, path: string): YamlTestCase {
@@ -29,13 +51,36 @@ function validateCase(value: unknown, index: number, path: string): YamlTestCase
   }
 
   const record = value as Record<string, unknown>;
-  const { description, expression, expected } = record;
+  const { description, expression, expected, error } = record;
   if (typeof description !== "string") throw new Error(`${location}.description must be a string`);
   if (typeof expression !== "string") throw new Error(`${location}.expression must be a string`);
-  if (typeof expected !== "string") throw new Error(`${location}.expected must be a string`);
 
   if (description.length === 0) throw new Error(`${location}.description must not be empty`);
   if (expression.trim().length === 0) throw new Error(`${location}.expression must not be empty`);
 
-  return { description, expression, expected };
+  const hasExpected = expected !== undefined;
+  const hasError = error !== undefined;
+  if (hasExpected === hasError) {
+    throw new Error(`${location} must set exactly one of 'expected' or 'error'`);
+  }
+  if (hasExpected && typeof expected !== "string") {
+    throw new Error(`${location}.expected must be a string`);
+  }
+  if (hasError && typeof error !== "string") {
+    throw new Error(`${location}.error must be a string`);
+  }
+
+  const testCase: YamlTestCase = { description, expression };
+  if (hasExpected) testCase.expected = expected as string;
+  if (hasError) testCase.error = error as string;
+  for (const field of ["now", "defaultTimeZone", "defaultCalendar"] as const) {
+    const contextValue = record[field];
+    if (contextValue === undefined) continue;
+    if (typeof contextValue !== "string") {
+      throw new Error(`${location}.${field} must be a string`);
+    }
+    testCase[field] = contextValue;
+  }
+
+  return testCase;
 }

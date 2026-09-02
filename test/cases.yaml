@@ -173,3 +173,147 @@
       2025-12-31
       P1D)
   expected: '2026-01-01'
+
+# --- Arithmetic and calendar edge cases ---
+
+- description: Add one year to a leap day constrains to February 28
+  expression: '(add 2024-02-29 P1Y)'
+  expected: '2025-02-28'
+
+- description: Constrain overflow when adding a month to the 31st
+  expression: '(add 2025-03-31 P1M :overflow "constrain")'
+  expected: '2025-04-30'
+
+- description: Days in a non-leap year
+  expression: '(days-in-year 2025-01-01)'
+  expected: '365'
+
+- description: Day of year on the last day of a non-leap year
+  expression: '(day-of-year 2025-12-31)'
+  expected: '365'
+
+- description: ISO day of week for New Year's Day 2025 is Wednesday
+  expression: '(day-of-week 2025-01-01)'
+  expected: '3'
+
+- description: Round an instant up to the nearest hour
+  expression: '(round 2025-06-01T12:34:56Z :smallest-unit "hour")'
+  expected: '2025-06-01T13:00:00Z'
+
+# --- Time zones and DST ---
+
+- description: Convert an instant into a half-hour-offset zone
+  expression: '(with-time-zone 2025-06-01T12:00:00Z "Asia/Kolkata")'
+  expected: '2025-06-01T17:30:00+05:30[Asia/Kolkata]'
+
+- description: Elapsed hours across the fall-back overlap exceed the wall-clock gap
+  expression: '(subtract 2025-11-02T12:00:00-05:00[America/New_York] 2025-11-02T00:00:00-04:00[America/New_York] :largest-unit "hours")'
+  expected: 'PT13H'
+
+- description: A calendar day before the spring-forward day equals 24 hours
+  expression: '(compare P1D PT24H :relative-to 2025-03-08T00:00:00-05:00[America/New_York])'
+  expected: '0'
+
+- description: A calendar day starting on the spring-forward day is shorter than 24 hours
+  expression: '(compare P1D PT24H :relative-to 2025-03-09T00:00:00-05:00[America/New_York])'
+  expected: '-1'
+
+# --- Deeply nested expressions ---
+
+- description: Convert to an instant then read the local hour in another zone
+  expression: '(hour (with-time-zone (to-instant 2025-06-01T08:00:00-04:00[America/New_York]) "Asia/Tokyo"))'
+  expected: '21'
+
+- description: A calendar-day addition precedes a 24-hour addition across spring-forward
+  expression: '(compare (add 2025-03-08T12:00:00-05:00[America/New_York] P1D) (add 2025-03-08T12:00:00-05:00[America/New_York] PT24H))'
+  expected: '-1'
+
+# --- Context operators (now / default-time-zone) ---
+
+- description: now returns the provided clock instant
+  expression: '(now)'
+  now: '2026-09-02T15:30:00Z'
+  expected: '2026-09-02T15:30:00Z'
+
+- description: default-time-zone returns the provided zone
+  expression: '(default-time-zone)'
+  defaultTimeZone: 'America/Los_Angeles'
+  expected: 'America/Los_Angeles'
+
+- description: Current date recipe resolves now in the context zone
+  expression: '(to-date (with-time-zone (now) (default-time-zone)))'
+  now: '2026-09-02T03:30:00Z'
+  defaultTimeZone: 'America/Los_Angeles'
+  expected: '2026-09-01'
+
+- description: Current day of month in the context zone
+  expression: '(day (with-time-zone (now) (default-time-zone)))'
+  now: '2026-09-02T03:30:00Z'
+  defaultTimeZone: 'America/Los_Angeles'
+  expected: '1'
+
+# --- Error taxonomy ---
+
+- description: Unrecognized literal is a lex error
+  expression: '(add 2025-01-31 #P1M)'
+  error: 'LEX_ERROR'
+
+- description: Unclosed call is a parse error
+  expression: '(add 2025-01-31 P1M'
+  error: 'PARSE_ERROR'
+
+- description: Trailing input after the expression is a parse error
+  expression: '(add 2025-01-31 P1M) extra'
+  error: 'PARSE_ERROR'
+
+- description: Unknown operator is rejected
+  expression: '(until 2025-01-01 2025-02-01)'
+  error: 'UNKNOWN_OPERATOR'
+
+- description: Wrong number of arguments is an arity error
+  expression: '(add 2025-01-31)'
+  error: 'ARITY_ERROR'
+
+- description: Unsupported keyword option is rejected
+  expression: '(add 2025-01-31 P1M :bogus 1)'
+  error: 'UNKNOWN_OPTION'
+
+- description: Repeating a keyword option is a duplicate-option error
+  expression: '(subtract 2025-12-31 2025-01-01 :largest-unit "months" :largest-unit "days")'
+  error: 'DUPLICATE_OPTION'
+
+- description: Quoting a duration literal makes it a string and mismatches the type
+  expression: '(add 2025-01-31 "P1M")'
+  error: 'TYPE_MISMATCH'
+
+- description: Comparing operands of different types is a type mismatch
+  expression: '(compare 2025-06-01 2025-06-01T12:00:00Z)'
+  error: 'TYPE_MISMATCH'
+
+- description: A month out of range is an invalid temporal value
+  expression: '(add 2025-13-01 P1M)'
+  error: 'INVALID_TEMPORAL_VALUE'
+
+- description: A nonexistent calendar day is an invalid temporal value
+  expression: '(add 2025-02-30 P1D)'
+  error: 'INVALID_TEMPORAL_VALUE'
+
+- description: A malformed duration literal is an invalid temporal value
+  expression: '(add 2025-01-31 P1H)'
+  error: 'INVALID_TEMPORAL_VALUE'
+
+- description: Adding calendar months to an instant is an invalid operation
+  expression: '(add 2025-06-01T12:00:00Z P1M)'
+  error: 'INVALID_TEMPORAL_OPERATION'
+
+- description: Reject overflow onto a nonexistent date is an invalid operation
+  expression: '(add 2025-01-31 P1M :overflow "reject")'
+  error: 'INVALID_TEMPORAL_OPERATION'
+
+- description: now without a clock is a missing-context error
+  expression: '(now)'
+  error: 'MISSING_CONTEXT'
+
+- description: default-time-zone without a zone is a missing-context error
+  expression: '(default-time-zone)'
+  error: 'MISSING_CONTEXT'

@@ -118,7 +118,7 @@ function add(
   const duration = expectType("add", args[1], "duration", 2, span);
   const allowed = receiver.type === "instant" ? [] : ["overflow"];
   const temporalOptions = temporalOptionsFor("add", options, allowed, span);
-  return { type: receiver.type, value: receiver.value.add(duration.value, temporalOptions) };
+  return applyDuration("add", receiver, duration, temporalOptions, span);
 }
 
 function subtract(
@@ -139,7 +139,7 @@ function subtract(
   if (right.type === "duration") {
     const allowed = left.type === "instant" ? [] : ["overflow"];
     const temporalOptions = temporalOptionsFor("subtract", options, allowed, span);
-    return { type: left.type, value: left.value.subtract(right.value, temporalOptions) };
+    return applyDuration("subtract", left, right, temporalOptions, span);
   }
 
   if (right.type !== left.type) {
@@ -157,6 +157,52 @@ function subtract(
     span,
   );
   return { type: "duration", value: left.value.since(right.value, temporalOptions) };
+}
+
+type Arithmetic = "add" | "subtract";
+type TemporalReceiver = RuntimeValue & { type: "date" | "instant" | "zoned-date-time" };
+
+/**
+ * Apply an `add`/`subtract` duration operation. Bun's Temporal reports both a
+ * nonexistent-day rejection (e.g. Jan 31 + P1M with :overflow "reject") and a
+ * genuinely out-of-representable-range result with the same opaque message. When
+ * the failure disappears under :overflow "constrain", it was purely an overflow
+ * rejection, so surface a message that names the actual cause. Genuine range
+ * errors propagate unchanged and are wrapped by evaluateCall.
+ */
+function applyDuration(
+  operator: Arithmetic,
+  receiver: TemporalReceiver,
+  duration: RuntimeValue,
+  temporalOptions: Record<string, unknown>,
+  span: Span,
+): RuntimeValue {
+  try {
+    return { type: receiver.type, value: receiver.value[operator](duration.value, temporalOptions) };
+  } catch (error) {
+    if (temporalOptions.overflow === "reject" && constrainSucceeds(operator, receiver, duration, temporalOptions)) {
+      throw new TimecalcError(
+        "INVALID_TEMPORAL_OPERATION",
+        `${operator} with :overflow "reject" landed on a date that does not exist in the target month; use :overflow "constrain" to clamp it`,
+        span,
+      );
+    }
+    throw error;
+  }
+}
+
+function constrainSucceeds(
+  operator: Arithmetic,
+  receiver: TemporalReceiver,
+  duration: RuntimeValue,
+  temporalOptions: Record<string, unknown>,
+): boolean {
+  try {
+    receiver.value[operator](duration.value, { ...temporalOptions, overflow: "constrain" });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function compare(
