@@ -1,6 +1,6 @@
 # timecalc
 
-`timecalc` is a deterministic date-math evaluator for the command line and the Model Context Protocol (MCP). It uses a small S-expression DSL and Bun's built-in implementation of JavaScript Temporal.
+`timecalc` is a deterministic-by-default date-math evaluator for the command line and the Model Context Protocol (MCP). It uses a small S-expression DSL and Bun's built-in implementation of JavaScript Temporal. An opt-in system-context mode supplies the host clock and time zone for interactive agents.
 
 ```console
 $ bun run timecalc '(add 2025-01-31 P1M)'
@@ -189,12 +189,17 @@ Duration equality is structural: `P1D` and `PT24H` are not equal even when they 
 
 Temporal requires the appropriate unit option for the value being rounded.
 
-### Conversion
+### Context and conversion
 
 | Operator | Signature | Result |
 |---|---|---|
+| `now` | `(now)` | Context's current `Instant` |
+| `default-time-zone` | `(default-time-zone)` | Context's time-zone identifier |
 | `with-time-zone` | `(with-time-zone instant-or-zoned-date-time "zone")` | `ZonedDateTime` |
 | `to-instant` | `(to-instant zoned-date-time)` | `Instant` |
+| `to-date` | `(to-date zoned-date-time)` | Local `PlainDate` |
+
+`now` and `default-time-zone` require explicit context options or system-context mode. They return `MISSING_CONTEXT` when the corresponding value is unavailable.
 
 ```lisp
 (with-time-zone 2025-06-01T12:00:00Z "America/New_York")
@@ -202,7 +207,12 @@ Temporal requires the appropriate unit option for the value being rounded.
 
 (to-instant 2025-06-01T08:00:00-04:00[America/New_York])
 ; 2025-06-01T12:00:00Z
+
+(to-date (with-time-zone (now) (default-time-zone)))
+; the current local date
 ```
+
+The last expression samples no clock itself: `(now)` reads the instant captured once in the evaluation context.
 
 ### Inspection
 
@@ -297,12 +307,13 @@ Errors are structured when `--json` is used:
 --now <instant>         Inject an explicit evaluation clock
 --time-zone <zone>      Set an explicit default time zone
 --calendar <calendar>   Set an explicit default calendar
+--system-context        Use the host clock and time zone as defaults
 -o, --output <file>     Set grammar diagram output for `grammar`
 -h, --help              Show help
 -V, --version           Show version
 ```
 
-The context options are validated, but the current core operators do not use an implicit clock, time zone, or calendar.
+`(now)` reads `--now`, and `(default-time-zone)` reads `--time-zone`. With `--system-context`, missing values come from `Temporal.Now.instant()` and `Temporal.Now.timeZoneId()`; explicit options take precedence. The system clock is sampled once per evaluation. Resolved context is included in JSON output.
 
 CLI exit codes:
 
@@ -333,7 +344,7 @@ The server is stateless and exposes exactly one tool:
 evaluate_date_expression
 ```
 
-The tool is annotated as read-only, non-destructive, idempotent, and closed-world.
+The tool is annotated as read-only, non-destructive, and closed-world. It is idempotent in deterministic mode and marked non-idempotent when the server enables system context.
 
 ### Tool input
 
@@ -353,11 +364,27 @@ The tool is annotated as read-only, non-destructive, idempotent, and closed-worl
 | `defaultTimeZone` | no | IANA or fixed-offset time-zone identifier |
 | `defaultCalendar` | no | Temporal calendar identifier |
 
-Unknown input properties are rejected. Optional context fields are validated and passed to the shared evaluator. Current core expressions do not consult host defaults.
+Unknown input properties are rejected. Optional context fields are validated and passed to the shared evaluator. `(now)` and `(default-time-zone)` read these values. Explicit request fields always override system defaults.
 
 ### Successful result
 
-MCP responses include concise text for display and structured content for programmatic use:
+MCP responses include concise text for display and structured content for programmatic use. When context is resolved, structured output also records the exact values used:
+
+```json
+{
+  "ok": true,
+  "type": "date",
+  "value": "2024-12-31",
+  "calendar": "iso8601",
+  "context": {
+    "now": "2025-01-01T04:30:00Z",
+    "defaultTimeZone": "America/New_York",
+    "defaultCalendar": "iso8601"
+  }
+}
+```
+
+For context-free expressions, the result remains concise:
 
 ```json
 {
@@ -411,6 +438,7 @@ DUPLICATE_OPTION
 TYPE_MISMATCH
 INVALID_TEMPORAL_VALUE
 INVALID_TEMPORAL_OPERATION
+MISSING_CONTEXT
 RESOURCE_LIMIT
 INTERNAL_ERROR
 ```
@@ -442,7 +470,7 @@ During development, use an absolute source path:
 }
 ```
 
-When the `timecalc` executable is installed:
+When the `timecalc` executable is installed, deterministic mode requires agents to pass explicit clock and zone context:
 
 ```json
 {
@@ -454,6 +482,21 @@ When the `timecalc` executable is installed:
   }
 }
 ```
+
+For interactive agents that cannot discover the current time or host zone, enable system context:
+
+```json
+{
+  "mcpServers": {
+    "timecalc": {
+      "command": "timecalc",
+      "args": ["mcp", "--system-context"]
+    }
+  }
+}
+```
+
+System-context mode resolves missing request context from the host for each tool call. `TZ` and the host environment determine the default time zone.
 
 Launch MCP Inspector with:
 
@@ -470,8 +513,10 @@ Only stdio transport is implemented. HTTP transport is intentionally deferred un
 
 ## Determinism and safety
 
-- Core evaluation never uses the host's local time zone implicitly.
-- Tests use fixed values and explicit zones.
+- Deterministic mode never uses the host clock or local time zone implicitly.
+- System-context mode is explicit, samples the clock once per evaluation, reports the resolved context, and marks the MCP tool non-idempotent.
+- Explicit request context overrides system defaults.
+- Tests use injected fixed clocks and explicit zones for system-context behavior.
 - Source is parsed into an AST and never passed to JavaScript `eval`.
 - The DSL has no filesystem, network, process, environment, import, variable, macro, or user-function primitives.
 - MCP evaluation is stateless.
@@ -499,7 +544,7 @@ It does not currently support:
 - business calendars, holidays, or business-day arithmetic;
 - recurrence rules or schedule generation;
 - variables, user-defined functions, or macros;
-- implicit conversion between Temporal types;
+- implicit conversion between Temporal types (explicit `with-time-zone`, `to-instant`, and `to-date` conversions are available);
 - remote MCP transports.
 
 ## Architecture

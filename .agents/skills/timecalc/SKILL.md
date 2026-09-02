@@ -20,9 +20,9 @@ Use the timecalc MCP tool `evaluate_date_expression` whenever a task requires da
    - Use a zoned date-time when local wall-clock and named-zone behavior matters.
    - Use an ISO 8601 duration for the amount being added, subtracted, compared, or rounded.
 2. Resolve ambiguous inputs before calling the tool:
-   - Ask for a time zone when the answer depends on one.
+   - Ask for a time zone when the answer depends on one and no default is available.
    - Do not invent an offset for a named time zone.
-   - For “today” or “now,” obtain the reference value from a trusted clock or ask the user. The optional MCP `now` field does not implicitly replace a missing literal in the current DSL.
+   - Use `(now)` for the context's current instant and `(default-time-zone)` for its zone. In system-context mode the MCP server supplies both; otherwise pass explicit `now` and `defaultTimeZone` inputs.
 3. Build one valid timecalc expression.
 4. Call `evaluate_date_expression` with the expression.
 5. Use the returned value as authoritative. Briefly explain calendar-versus-elapsed-time behavior when it materially affects the answer.
@@ -49,7 +49,7 @@ Optional deterministic context fields are:
 }
 ```
 
-Current core expressions are explicit and do not consult those defaults implicitly.
+`(now)` and `(default-time-zone)` consult these values. Explicit fields override defaults supplied by system-context mode.
 
 ## Literal forms
 
@@ -103,6 +103,14 @@ Use unit options when the representation matters:
 
 Do not use `until` or `since`; they are not DSL operators.
 
+### Use the current local date
+
+```lisp
+(to-date (with-time-zone (now) (default-time-zone)))
+```
+
+If this returns `MISSING_CONTEXT`, pass explicit `now` and `defaultTimeZone` tool inputs or tell the user that the MCP server must be started with `timecalc mcp --system-context`. Never guess the current time or zone.
+
 ### Convert a time zone
 
 ```lisp
@@ -146,6 +154,6 @@ Successful tool results include text and typed structured content. Prefer `struc
 }
 ```
 
-Preserve zone, offset, and calendar metadata when relevant. Do not strip a named zone from a zoned result or present an instant as local time without an explicit conversion.
+Preserve zone, offset, calendar, and evaluation-context metadata when relevant. In particular, use the returned `context.now` and `context.defaultTimeZone` to state what “now” or “today” meant. Do not strip a named zone from a zoned result or present an instant as local time without an explicit conversion.
 
 For detailed operator signatures, options, and error handling, read [references/dsl-reference.md](references/dsl-reference.md).

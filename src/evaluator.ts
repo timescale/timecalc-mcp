@@ -64,7 +64,7 @@ function evaluateCall(call: CallExpression, context: EvaluationContext): Runtime
   }
 
   try {
-    return invoke(call.operator as OperatorName, args, options, call.span);
+    return invoke(call.operator as OperatorName, args, options, call.span, context);
   } catch (error) {
     if (error instanceof TimecalcError) throw error;
     throw new TimecalcError(
@@ -80,6 +80,7 @@ function invoke(
   args: RuntimeValue[],
   options: ReadonlyMap<string, RuntimeValue>,
   span: Span,
+  context: EvaluationContext,
 ): RuntimeValue {
   switch (operator) {
     case "add":
@@ -92,10 +93,16 @@ function invoke(
       return equals(args, options, span);
     case "round":
       return round(args, options, span);
+    case "now":
+      return contextNow(args, options, span, context);
+    case "default-time-zone":
+      return defaultTimeZone(args, options, span, context);
     case "with-time-zone":
       return withTimeZone(args, options, span);
     case "to-instant":
       return toInstant(args, options, span);
+    case "to-date":
+      return toDate(args, options, span);
     default:
       return inspect(operator, args, options, span);
   }
@@ -232,6 +239,42 @@ function round(
   return { type: value.type, value: value.value.round(temporalOptions) };
 }
 
+function contextNow(
+  args: RuntimeValue[],
+  options: ReadonlyMap<string, RuntimeValue>,
+  span: Span,
+  context: EvaluationContext,
+): RuntimeValue {
+  exactArity("now", args, 0, span);
+  rejectOptions("now", options, span);
+  if (context.now === undefined) {
+    throw new TimecalcError(
+      "MISSING_CONTEXT",
+      "now requires an explicit clock or system-context mode",
+      span,
+    );
+  }
+  return { type: "instant", value: context.now };
+}
+
+function defaultTimeZone(
+  args: RuntimeValue[],
+  options: ReadonlyMap<string, RuntimeValue>,
+  span: Span,
+  context: EvaluationContext,
+): RuntimeValue {
+  exactArity("default-time-zone", args, 0, span);
+  rejectOptions("default-time-zone", options, span);
+  if (context.defaultTimeZone === undefined) {
+    throw new TimecalcError(
+      "MISSING_CONTEXT",
+      "default-time-zone requires an explicit time zone or system-context mode",
+      span,
+    );
+  }
+  return { type: "string", value: context.defaultTimeZone };
+}
+
 function withTimeZone(
   args: RuntimeValue[],
   options: ReadonlyMap<string, RuntimeValue>,
@@ -256,6 +299,17 @@ function toInstant(
   rejectOptions("to-instant", options, span);
   const value = expectType("to-instant", args[0], "zoned-date-time", 1, span);
   return { type: "instant", value: value.value.toInstant() };
+}
+
+function toDate(
+  args: RuntimeValue[],
+  options: ReadonlyMap<string, RuntimeValue>,
+  span: Span,
+): RuntimeValue {
+  exactArity("to-date", args, 1, span);
+  rejectOptions("to-date", options, span);
+  const value = expectType("to-date", args[0], "zoned-date-time", 1, span);
+  return { type: "date", value: value.value.toPlainDate() };
 }
 
 const INSPECTION: Readonly<Record<string, { property: string; types: readonly ValueType[]; result: ValueType }>> = {

@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { evaluate } from "../src/evaluator";
+import { evaluate, type EvaluationContext } from "../src/evaluator";
 import { parse } from "../src/parser";
 import { serializeResult } from "../src/serialize";
 
-function run(source: string) {
-  return evaluate(parse(source));
+function run(source: string, context: EvaluationContext = {}) {
+  return evaluate(parse(source), context);
 }
 
 describe("evaluator", () => {
@@ -57,11 +57,32 @@ describe("evaluator", () => {
     );
   });
 
-  test("converts instants to zones and back", () => {
+  test("converts instants to zones, dates, and back", () => {
     const zoned = run('(with-time-zone 2025-06-01T12:00:00Z "America/New_York")');
     expect(zoned.value.toString()).toBe("2025-06-01T08:00:00-04:00[America/New_York]");
     expect(run(`(to-instant ${zoned.value.toString()})`).value.toString()).toBe(
       "2025-06-01T12:00:00Z",
+    );
+    expect(run(`(to-date ${zoned.value.toString()})`).value.toString()).toBe("2025-06-01");
+  });
+
+  test("exposes the injected clock and default time zone", () => {
+    const TemporalAPI = (globalThis as any).Temporal;
+    const context = {
+      now: TemporalAPI.Instant.from("2025-01-01T05:00:00Z"),
+      defaultTimeZone: "America/New_York",
+    };
+    expect(run("(now)", context).value.toString()).toBe("2025-01-01T05:00:00Z");
+    expect(run("(default-time-zone)", context).value).toBe("America/New_York");
+    expect(
+      run("(to-date (with-time-zone (now) (default-time-zone)))", context).value.toString(),
+    ).toBe("2025-01-01");
+  });
+
+  test("rejects context operators when their context is unavailable", () => {
+    expect(() => run("(now)")).toThrow(expect.objectContaining({ code: "MISSING_CONTEXT" }));
+    expect(() => run("(default-time-zone)")).toThrow(
+      expect.objectContaining({ code: "MISSING_CONTEXT" }),
     );
   });
 

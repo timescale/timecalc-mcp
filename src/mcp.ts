@@ -3,7 +3,11 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import * as z from "zod/v4";
 import { OPERATOR_CATALOG } from "./operators/catalog";
-import { evaluateRequest, type EvaluationRequest } from "./service";
+import {
+  evaluateRequest,
+  type EvaluationOptions,
+  type EvaluationRequest,
+} from "./service";
 import { VERSION } from "./version";
 
 export const MCP_SERVER_NAME = "timecalc";
@@ -51,6 +55,11 @@ const outputSchema = {
   calendar: z.string().optional(),
   timeZone: z.string().optional(),
   offset: z.string().optional(),
+  context: z.object({
+    now: z.string().optional(),
+    defaultTimeZone: z.string().optional(),
+    defaultCalendar: z.string().optional(),
+  }).strict().optional(),
   error: z.object({
     code: z.enum([
       "LEX_ERROR",
@@ -62,6 +71,7 @@ const outputSchema = {
       "TYPE_MISMATCH",
       "INVALID_TEMPORAL_VALUE",
       "INVALID_TEMPORAL_OPERATION",
+      "MISSING_CONTEXT",
       "RESOURCE_LIMIT",
       "INTERNAL_ERROR",
     ]),
@@ -74,8 +84,13 @@ const outputSchema = {
 
 export type EvaluateToolInput = z.infer<typeof inputSchema>;
 
-export function handleEvaluateDateExpression(input: EvaluationRequest): CallToolResult {
-  const outcome = evaluateRequest(input);
+export type TimecalcMcpServerOptions = EvaluationOptions;
+
+export function handleEvaluateDateExpression(
+  input: EvaluationRequest,
+  options: TimecalcMcpServerOptions = {},
+): CallToolResult {
+  const outcome = evaluateRequest(input, options);
   if (outcome.ok) {
     return {
       content: [{ type: "text", text: outcome.text }],
@@ -90,7 +105,9 @@ export function handleEvaluateDateExpression(input: EvaluationRequest): CallTool
   };
 }
 
-export function createTimecalcMcpServer(): McpServer {
+export function createTimecalcMcpServer(
+  options: TimecalcMcpServerOptions = {},
+): McpServer {
   const server = new McpServer({
     name: MCP_SERVER_NAME,
     version: MCP_SERVER_VERSION,
@@ -100,24 +117,26 @@ export function createTimecalcMcpServer(): McpServer {
     EVALUATE_TOOL_NAME,
     {
       title: "Evaluate a date expression",
-      description: createToolDescription(),
+      description: createToolDescription(options.systemContext === true),
       inputSchema,
       outputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
-        idempotentHint: true,
+        idempotentHint: options.systemContext !== true,
         openWorldHint: false,
       },
     },
-    async (input) => handleEvaluateDateExpression(input),
+    async (input) => handleEvaluateDateExpression(input, options),
   );
 
   return server;
 }
 
-export async function runStdioMcpServer(): Promise<void> {
-  const server = createTimecalcMcpServer();
+export async function runStdioMcpServer(
+  options: TimecalcMcpServerOptions = {},
+): Promise<void> {
+  const server = createTimecalcMcpServer(options);
   const transport = new StdioServerTransport();
   let closing = false;
 
@@ -143,12 +162,18 @@ export async function runStdioMcpServer(): Promise<void> {
   }
 }
 
-function createToolDescription(): string {
+function createToolDescription(systemContext: boolean): string {
   const operators = OPERATOR_CATALOG
     .map((operator) => `- ${operator.signature}: ${operator.description}`)
     .join("\n");
 
-  return `Evaluate one deterministic timecalc date-math expression with Bun Temporal.
+  const contextDescription = systemContext
+    ? "The server supplies the current system instant and time zone unless the request overrides them. Expressions using that context are not deterministic."
+    : "Clock- or default-zone-dependent operators require explicit request context. Evaluations are deterministic.";
+
+  return `Evaluate one timecalc date-math expression with Bun Temporal.
+
+${contextDescription}
 
 Temporal literals are unquoted and self-describing:
 - date: 2025-01-31

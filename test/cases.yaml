@@ -102,6 +102,10 @@
   expression: '(to-instant 2025-06-01T08:00:00-04:00[America/New_York])'
   expected: '2025-06-01T12:00:00Z'
 
+- description: Extract the local date from a zoned date-time
+  expression: '(to-date 2025-01-01T00:30:00+01:00[Europe/Paris])'
+  expected: '2025-01-01'
+
 - description: Inspect year
   expression: '(year 2025-06-01)'
   expected: '2025'

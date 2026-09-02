@@ -90,19 +90,37 @@ Supports instants, zoned date-times, and durations.
 :relative-to temporal      duration only
 ```
 
-### Conversion
+### Context and conversion
+
+```lisp
+(now)
+```
+
+Returns the current instant captured by the evaluation context. The request must provide `now`, or the MCP server must run in system-context mode.
+
+```lisp
+(default-time-zone)
+```
+
+Returns the context's default time-zone identifier. The request must provide `defaultTimeZone`, or the MCP server must run in system-context mode.
 
 ```lisp
 (with-time-zone instant-or-zoned-date-time "zone")
 ```
 
-Returns a zoned date-time without changing the represented instant.
+Returns a zoned date-time without changing the represented instant. The zone argument can be a nested expression such as `(default-time-zone)`.
 
 ```lisp
 (to-instant zoned-date-time)
 ```
 
 Returns an instant.
+
+```lisp
+(to-date zoned-date-time)
+```
+
+Returns the local plain date represented in that zoned date-time.
 
 ### Inspection
 
@@ -124,9 +142,15 @@ Each inspection operator accepts exactly one argument.
 - Use a **zoned date-time** for human schedules where local time and daylight-saving transitions matter.
 - Use a **duration** to describe the amount or signed difference.
 
-Do not implicitly convert between types. Use `with-time-zone` and `to-instant` explicitly.
+Do not implicitly convert between types. Use `with-time-zone`, `to-instant`, and `to-date` explicitly.
 
 ## Common recipes
+
+Current local date with evaluation context:
+
+```lisp
+(to-date (with-time-zone (now) (default-time-zone)))
+```
 
 End of month:
 
@@ -183,7 +207,8 @@ The tool returns `isError: true` and structured details for invalid expressions.
 | `DUPLICATE_OPTION` | Keep only one occurrence of the option. |
 | `TYPE_MISMATCH` | Supply the required value type; do not quote Temporal literals. |
 | `INVALID_TEMPORAL_VALUE` | Correct the date, offset, zone, duration, clock, or calendar value. |
-| `INVALID_TEMPORAL_OPERATION` | Check Temporal unit restrictions and whether context is required. |
+| `INVALID_TEMPORAL_OPERATION` | Check Temporal unit restrictions. |
+| `MISSING_CONTEXT` | Pass `now` or `defaultTimeZone`, or enable MCP system-context mode. |
 | `RESOURCE_LIMIT` | Simplify or shorten the expression. |
 | `INTERNAL_ERROR` | Report that the tool failed; do not guess the answer. |
 

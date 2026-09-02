@@ -15,6 +15,7 @@ interface CliOptions {
   now?: string;
   timeZone?: string;
   calendar?: string;
+  systemContext: boolean;
 }
 
 class UsageError extends Error {}
@@ -42,7 +43,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
   if (options.command === "mcp") {
     try {
       const { runStdioMcpServer } = await import("./mcp");
-      await runStdioMcpServer();
+      await runStdioMcpServer({ systemContext: options.systemContext });
       return 0;
     } catch (error) {
       console.error(error instanceof Error ? error.message : String(error));
@@ -63,12 +64,15 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     return 2;
   }
 
-  const outcome = evaluateRequest({
-    expression: source,
-    ...(options.now ? { now: options.now } : {}),
-    ...(options.timeZone ? { defaultTimeZone: options.timeZone } : {}),
-    ...(options.calendar ? { defaultCalendar: options.calendar } : {}),
-  });
+  const outcome = evaluateRequest(
+    {
+      expression: source,
+      ...(options.now ? { now: options.now } : {}),
+      ...(options.timeZone ? { defaultTimeZone: options.timeZone } : {}),
+      ...(options.calendar ? { defaultCalendar: options.calendar } : {}),
+    },
+    { systemContext: options.systemContext },
+  );
 
   if (!outcome.ok) {
     if (options.json) printJson(outcome.response, options.pretty);
@@ -100,6 +104,7 @@ function parseArguments(argv: string[]): CliOptions {
     stdin: false,
     json: false,
     pretty: false,
+    systemContext: false,
   };
   const expressions: string[] = [];
 
@@ -133,6 +138,9 @@ function parseArguments(argv: string[]): CliOptions {
       case "--calendar":
         options.calendar = requiredOptionValue(argument, argv, index++);
         break;
+      case "--system-context":
+        options.systemContext = true;
+        break;
       case "--":
         expressions.push(...argv.slice(index));
         index = argv.length;
@@ -158,6 +166,17 @@ function parseArguments(argv: string[]): CliOptions {
   }
   if (command === "grammar" && (options.expression || options.stdin)) {
     throw new UsageError("The grammar command does not accept an expression.");
+  }
+  if (command === "grammar" && options.systemContext) {
+    throw new UsageError("--system-context is not valid with the grammar command.");
+  }
+  if (command === "mcp" && (options.expression || options.stdin || options.json || options.pretty)) {
+    throw new UsageError("The mcp command does not accept an expression or output options.");
+  }
+  if (command === "mcp" && (options.now || options.timeZone || options.calendar)) {
+    throw new UsageError(
+      "Pass explicit context in each MCP tool request, or use --system-context.",
+    );
   }
   return options;
 }
@@ -186,12 +205,13 @@ function printJson(value: unknown, pretty: boolean): void {
 
 const HELP = `timecalc ${VERSION}
 
-Evaluate deterministic Temporal date-math expressions.
+Evaluate Temporal date-math expressions deterministically or with opt-in system context.
 
 Usage:
   timecalc [eval] [options] '<expression>'
   timecalc validate [options] '<expression>'
   timecalc grammar [--output <file>]
+  timecalc mcp [--system-context]
 
 Examples:
   timecalc '(add 2025-01-31 P1M)'
@@ -205,6 +225,7 @@ Options:
   --now <instant>         Inject the evaluation clock
   --time-zone <zone>      Set the evaluation context's default time zone
   --calendar <calendar>   Set the evaluation context's default calendar
+  --system-context        Use the system clock and time zone as defaults
   -o, --output <file>     Grammar diagram output path
   -h, --help              Show help
   -V, --version           Show version

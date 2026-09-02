@@ -2,6 +2,7 @@ export type OperatorCategory =
   | "arithmetic"
   | "comparison"
   | "rounding"
+  | "context"
   | "conversion"
   | "inspection";
 
@@ -53,6 +54,18 @@ export const OPERATOR_CATALOG = [
     options: ["smallest-unit", "largest-unit", "rounding-increment", "rounding-mode", "relative-to"],
   },
   {
+    name: "now",
+    category: "context",
+    signature: "(now)",
+    description: "Return the evaluation context's current instant.",
+  },
+  {
+    name: "default-time-zone",
+    category: "context",
+    signature: "(default-time-zone)",
+    description: "Return the evaluation context's default time-zone identifier.",
+  },
+  {
     name: "with-time-zone",
     category: "conversion",
     signature: "(with-time-zone instant-or-zoned-date-time time-zone-string)",
@@ -63,6 +76,12 @@ export const OPERATOR_CATALOG = [
     category: "conversion",
     signature: "(to-instant zoned-date-time)",
     description: "Convert a zoned date-time to an instant.",
+  },
+  {
+    name: "to-date",
+    category: "conversion",
+    signature: "(to-date zoned-date-time)",
+    description: "Extract the local plain date from a zoned date-time.",
   },
   { name: "year", category: "inspection", signature: "(year value)", description: "Return the year." },
   { name: "month", category: "inspection", signature: "(month value)", description: "Return the month." },

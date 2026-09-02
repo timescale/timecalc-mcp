@@ -39,6 +39,32 @@ describe("CLI", () => {
     });
   });
 
+  test("uses explicit evaluation context", () => {
+    const result = cli(
+      "--now",
+      "2025-01-01T04:30:00Z",
+      "--time-zone",
+      "America/New_York",
+      "(to-date (with-time-zone (now) (default-time-zone)))",
+    );
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout.toString()).toBe("2024-12-31\n");
+  });
+
+  test("can use the system clock and time zone", () => {
+    const result = cli("--system-context", "--json", "(now)");
+    expect(result.exitCode).toBe(0);
+    const output = JSON.parse(result.stdout.toString());
+    expect(output).toMatchObject({
+      ok: true,
+      type: "instant",
+      context: { defaultCalendar: "iso8601" },
+    });
+    expect(output.value).toBe(output.context.now);
+    expect(typeof output.context.defaultTimeZone).toBe("string");
+    expect(() => (globalThis as any).Temporal.Instant.from(output.value)).not.toThrow();
+  });
+
   test("reads stdin", () => {
     const result = Bun.spawnSync({
       cmd: [process.execPath, "run", CLI, "--stdin"],
