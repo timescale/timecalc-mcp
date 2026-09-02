@@ -96,13 +96,13 @@ Supports instants, zoned date-times, and durations.
 (now)
 ```
 
-Returns the current instant captured by the evaluation context. The request must provide `now`, or the MCP server must run in system-context mode.
+Returns the current instant captured by the evaluation context. The request must provide `now`, or the MCP server must run in system-context mode. The system clock is sampled once per evaluation, so multiple `(now)` calls in one expression return the same instant.
 
 ```lisp
 (default-time-zone)
 ```
 
-Returns the context's default time-zone identifier. The request must provide `defaultTimeZone`, or the MCP server must run in system-context mode.
+Returns the context's default time-zone identifier. The request must provide `defaultTimeZone`, or the MCP server must run in system-context mode. A system default is the zone of the machine or container running timecalc, not necessarily the end user's zone.
 
 ```lisp
 (with-time-zone instant-or-zoned-date-time "zone")
@@ -146,7 +146,7 @@ Do not implicitly convert between types. Use `with-time-zone`, `to-instant`, and
 
 ## Common recipes
 
-Current local date with evaluation context:
+Current date in the evaluation context's zone:
 
 ```lisp
 (to-date (with-time-zone (now) (default-time-zone)))
@@ -208,7 +208,7 @@ The tool returns `isError: true` and structured details for invalid expressions.
 | `TYPE_MISMATCH` | Supply the required value type; do not quote Temporal literals. |
 | `INVALID_TEMPORAL_VALUE` | Correct the date, offset, zone, duration, clock, or calendar value. |
 | `INVALID_TEMPORAL_OPERATION` | Check Temporal unit restrictions. |
-| `MISSING_CONTEXT` | Pass `now` or `defaultTimeZone`, or enable MCP system-context mode. |
+| `MISSING_CONTEXT` | Pass `now` or `defaultTimeZone`, or enable MCP system-context mode. Do not guess missing context. |
 | `RESOURCE_LIMIT` | Simplify or shorten the expression. |
 | `INTERNAL_ERROR` | Report that the tool failed; do not guess the answer. |
 
