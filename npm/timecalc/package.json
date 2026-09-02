@@ -1,0 +1,48 @@
+{
+  "name": "@tigerdata/timecalc",
+  "version": "0.0.0",
+  "description": "Deterministic date, time-zone, and duration calculator: CLI and MCP server (standalone executable, no runtime required)",
+  "license": "Apache-2.0",
+  "author": "TigerData",
+  "homepage": "https://github.com/timescale/timecalc-mcp#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/timescale/timecalc-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/timescale/timecalc-mcp/issues"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "date",
+    "time",
+    "timezone",
+    "duration",
+    "temporal",
+    "calendar"
+  ],
+  "bin": {
+    "timecalc": "bin/timecalc.js"
+  },
+  "files": [
+    "bin",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "optionalDependencies": {
+    "@tigerdata/timecalc-linux-amd64": "0.0.0",
+    "@tigerdata/timecalc-linux-arm64": "0.0.0",
+    "@tigerdata/timecalc-darwin-amd64": "0.0.0",
+    "@tigerdata/timecalc-darwin-arm64": "0.0.0",
+    "@tigerdata/timecalc-windows-amd64": "0.0.0",
+    "@tigerdata/timecalc-windows-arm64": "0.0.0"
+  }
+}

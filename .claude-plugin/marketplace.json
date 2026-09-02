@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "timecalc",
+  "owner": {
+    "name": "TigerData",
+    "url": "https://tigerdata.com"
+  },
+  "description": "timecalc: deterministic date, calendar, time-zone, and duration calculations for agents",
+  "plugins": [
+    {
+      "name": "timecalc",
+      "source": "./plugins/timecalc",
+      "description": "timecalc MCP server plus an Agent Skill for reliable date math",
+      "category": "productivity",
+      "tags": ["date", "time", "timezone", "duration", "mcp"]
+    }
+  ]
+}

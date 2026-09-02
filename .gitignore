@@ -1,5 +1,7 @@
 node_modules/
 dist/
+download/
+npm/dist/
 coverage/
 .env
 .env.*

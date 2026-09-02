@@ -2,20 +2,7 @@
 
 import { mkdir, readFile, stat } from "node:fs/promises";
 import { resolve } from "node:path";
-
-interface BuildTarget {
-  id: string;
-  bunTarget: string;
-  extension: "" | ".exe";
-}
-
-const TARGETS: readonly BuildTarget[] = [
-  { id: "linux-amd64", bunTarget: "bun-linux-x64", extension: "" },
-  { id: "linux-arm64", bunTarget: "bun-linux-arm64", extension: "" },
-  { id: "darwin-arm64", bunTarget: "bun-darwin-arm64", extension: "" },
-  { id: "windows-amd64", bunTarget: "bun-windows-x64", extension: ".exe" },
-  { id: "windows-arm64", bunTarget: "bun-windows-arm64", extension: ".exe" },
-];
+import { type BuildTarget, TARGETS, executableFilename, findTarget, isDarwin } from "./targets.ts";
 
 interface Options {
   version: string;
@@ -45,7 +32,7 @@ const outdir = resolve(options.outdir);
 await mkdir(outdir, { recursive: true });
 
 for (const target of options.targets) {
-  const filename = `timecalc-v${options.version}-${target.id}${target.extension}`;
+  const filename = executableFilename(options.version, target);
   const outfile = resolve(outdir, filename);
   console.log(`Building ${filename} (${target.bunTarget})`);
 
@@ -74,7 +61,7 @@ for (const target of options.targets) {
     throw new Error(`Build failed for ${target.id} with exit code ${exitCode}`);
   }
 
-  if (target.id === "darwin-arm64") {
+  if (isDarwin(target)) {
     if (process.platform === "darwin") {
       await signMacOSExecutable(outfile);
     } else {
@@ -183,13 +170,7 @@ async function parseOptions(args: string[]): Promise<Options> {
   const targetIds = selectedTargetIds.length > 0
     ? [...new Set(selectedTargetIds)]
     : TARGETS.map((target) => target.id);
-  const targets = targetIds.map((id) => {
-    const target = TARGETS.find((candidate) => candidate.id === id);
-    if (!target) {
-      throw new Error(`Unknown target '${id}'. Expected one of: ${TARGETS.map((item) => item.id).join(", ")}`);
-    }
-    return target;
-  });
+  const targets = targetIds.map(findTarget);
 
   return { version, outdir, targets };
 }

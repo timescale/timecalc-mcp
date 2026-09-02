@@ -27,6 +27,14 @@ At a glance:
 
 ## Quick start
 
+There are three ways to install timecalc. All of them deliver the same standalone executable; none require Bun.
+
+| Method | Best for | Requires |
+|---|---|---|
+| [Release binary](#install-a-release-binary-recommended) | Fastest startup; any MCP client or shell use | `curl` and `tar` (or `unzip`) |
+| [npm / `npx`](#install-with-npm) | MCP clients whose config expects an `npx` command | Node.js 20+ and npm |
+| [Claude Code plugin](#install-the-claude-code-plugin) | Claude Code; installs the MCP server and the Agent Skill together | Claude Code, Node.js 20+ and npm |
+
 ### Install a release binary (recommended)
 
 On Linux, macOS, or Windows with a POSIX shell such as Git Bash, install the latest release with:
@@ -50,7 +58,8 @@ For manual installation, download the archive for your platform:
 |---|---|
 | Linux AMD64 | `timecalc-v<version>-linux-amd64.tar.gz` |
 | Linux ARM64 | `timecalc-v<version>-linux-arm64.tar.gz` |
-| macOS ARM64 | `timecalc-v<version>-darwin-arm64.tar.gz` |
+| macOS AMD64 (Intel) | `timecalc-v<version>-darwin-amd64.tar.gz` |
+| macOS ARM64 (Apple Silicon) | `timecalc-v<version>-darwin-arm64.tar.gz` |
 | Windows AMD64 | `timecalc-v<version>-windows-amd64.zip` |
 | Windows ARM64 | `timecalc-v<version>-windows-arm64.zip` |
 
@@ -67,7 +76,7 @@ On Linux or macOS, extract the archive and install the executable:
 
 ```bash
 VERSION=X.Y.Z                 # replace with the release version
-TARGET=linux-amd64            # or linux-arm64 / darwin-arm64
+TARGET=linux-amd64            # or linux-arm64 / darwin-amd64 / darwin-arm64
 ARCHIVE="timecalc-v${VERSION}-${TARGET}.tar.gz"
 
 mkdir -p "$HOME/.local/bin"
@@ -86,6 +95,36 @@ On Windows, verify the archive against `SHA256SUMS`, extract the `.zip`, and mov
 
 To develop timecalc or run it from source, see [Development](#development).
 
+### Install with npm
+
+The executables are also published to npm as [`@tigerdata/timecalc`](https://www.npmjs.com/package/@tigerdata/timecalc). That package is a small Node.js launcher; the executable itself comes from a platform-specific package (`@tigerdata/timecalc-linux-amd64`, `@tigerdata/timecalc-darwin-arm64`, and so on) selected through `optionalDependencies`, so npm downloads only the one that matches the machine.
+
+Run without installing:
+
+```bash
+npx -y @tigerdata/timecalc '(add 2025-01-31 P1M)'
+```
+
+Or install globally:
+
+```bash
+npm install -g @tigerdata/timecalc
+timecalc --version
+```
+
+Each executable embeds the Bun runtime and is 60-90 MB on disk (roughly 25-40 MB compressed), so the first `npx` run downloads more than a typical npm package. Later runs start from the npm cache. The release binary route above avoids the Node.js launcher and starts slightly faster; prefer it when the MCP client can run an arbitrary command.
+
+### Install the Claude Code plugin
+
+For [Claude Code](https://code.claude.com), a plugin installs the MCP server and the [Agent Skill](#agent-skill) in one step:
+
+```text
+/plugin marketplace add timescale/timecalc-mcp
+/plugin install timecalc@timecalc
+```
+
+The plugin starts the server with `npx -y @tigerdata/timecalc mcp --system-context`, so Node.js and npm must be on `PATH`. If you already added a `timecalc` MCP server to Claude Code by hand, remove it first to avoid registering the tool twice. The plugin source lives in [`plugins/timecalc/`](plugins/timecalc/).
+
 ### As an MCP server
 
 For an interactive agent, system-context mode is usually the most useful configuration because many agent harnesses do not expose their current clock or local time zone:
@@ -101,7 +140,7 @@ For an interactive agent, system-context mode is usually the most useful configu
 }
 ```
 
-This still permits a caller to override the clock and zone for reproducible calculations. Use `args: ["mcp"]` instead when all context must be supplied explicitly. See [MCP client configuration](#mcp-client-configuration) for source-checkout configuration.
+This still permits a caller to override the clock and zone for reproducible calculations. Use `args: ["mcp"]` instead when all context must be supplied explicitly. If the client should fetch timecalc itself, use `"command": "npx"` with `"args": ["-y", "@tigerdata/timecalc", "mcp", "--system-context"]`. See [MCP client configuration](#mcp-client-configuration) for source-checkout configuration.
 
 Typical agent requests include:
 
@@ -587,11 +626,13 @@ Stack traces, host paths, and environment details are not returned. In stdio mod
 
 A portable [Agent Skill](https://agentskills.io) for teaching compatible agents when and how to use the MCP server is included at [`.agents/skills/timecalc/SKILL.md`](.agents/skills/timecalc/SKILL.md).
 
-Clients that discover project skills from `.agents/skills/` can use it directly. For other clients, copy the `.agents/skills/timecalc/` directory into that client's skill directory. The skill assumes the timecalc MCP server is already configured and exposes `evaluate_date_expression`.
+Clients that discover project skills from `.agents/skills/` can use it directly. Claude Code users get it automatically from the [plugin](#install-the-claude-code-plugin). For other clients, copy the `.agents/skills/timecalc/` directory into that client's skill directory. The skill assumes the timecalc MCP server is already configured and exposes `evaluate_date_expression`.
+
+The copy under [`plugins/timecalc/skills/`](plugins/timecalc/skills/) is generated from `.agents/skills/timecalc/` by `./bun run plugin:sync`; CI fails if the two diverge.
 
 ### MCP client configuration
 
-Use the installed release binary for normal MCP operation. For interactive agents that cannot discover the current time or host zone, enable system context:
+Use the installed release binary for normal MCP operation (or `npx -y @tigerdata/timecalc` in place of `timecalc` if the client should fetch it from npm). For interactive agents that cannot discover the current time or host zone, enable system context:
 
 ```json
 {
@@ -640,7 +681,7 @@ Contributors running directly from a source checkout can configure an absolute s
 Launch MCP Inspector from a source checkout with:
 
 ```bash
-bun run mcp:inspect
+./bun run mcp:inspect
 ```
 
 Pinned protocol dependencies:
@@ -711,42 +752,51 @@ Important files:
 
 ## Development
 
+The repository pins Bun 1.4.0 through the [`./bun`](bun) wrapper script, which downloads that exact version into `download/` on first use and then executes it. Use `./bun` in place of `bun` for every command below; CI does the same, so local and CI behavior match without a separate Bun installation.
+
 Install exactly the locked dependencies:
 
 ```bash
-bun install --frozen-lockfile
+./bun ci
 ```
 
 Run the complete test suite:
 
 ```bash
-bun test
+./bun test
 ```
 
 Run the YAML conformance suite with per-case output:
 
 ```bash
-bun run test:cases
+./bun run test:cases
 ```
 
 Run strict TypeScript checking:
 
 ```bash
-bun run typecheck
+./bun run typecheck
 ```
 
 Lint and regenerate both the HTML and Markdown grammar diagrams:
 
 ```bash
-bun run grammar:lint
-bun run grammar:diagram
+./bun run grammar:lint
+./bun run grammar:diagram
 ```
 
 Generate only one format when needed:
 
 ```bash
-bun run grammar:diagram:html
-bun run grammar:diagram:markdown
+./bun run grammar:diagram:html
+./bun run grammar:diagram:markdown
+```
+
+Check that the Claude Code plugin's copy of the Agent Skill matches the canonical skill, or refresh it after editing `.agents/skills/timecalc/`:
+
+```bash
+./bun run plugin:check
+./bun run plugin:sync
 ```
 
 ### Standalone executables
@@ -754,25 +804,26 @@ bun run grammar:diagram:markdown
 Build all release executables with Bun:
 
 ```bash
-bun run build:executables -- --version 1.2.3
+./bun run build:executables
 ```
 
-Outputs are written to `dist/`:
+The version embedded in the executables and their filenames comes from `package.json`; pass `--version X.Y.Z` to override it. Outputs are written to `dist/`:
 
 | Target | Output |
 |---|---|
 | Linux AMD64 | `timecalc-v1.2.3-linux-amd64` |
 | Linux ARM64 | `timecalc-v1.2.3-linux-arm64` |
+| macOS AMD64 | `timecalc-v1.2.3-darwin-amd64` |
 | macOS ARM64 | `timecalc-v1.2.3-darwin-arm64` |
 | Windows AMD64 | `timecalc-v1.2.3-windows-amd64.exe` |
 | Windows ARM64 | `timecalc-v1.2.3-windows-arm64.exe` |
 
-The executables contain the Bun runtime and all runtime dependencies; users do not need to install Bun. The supplied version is embedded in CLI and MCP server metadata. When the build runs on macOS, it automatically re-signs the macOS executable with the JIT entitlements recommended for Bun standalone executables and verifies the signature. A macOS target cross-compiled on another operating system is left unsigned with a warning; release builds run that target on macOS.
+The target table is defined once in [`scripts/targets.ts`](scripts/targets.ts) and shared by the executable and npm build scripts. The executables contain the Bun runtime and all runtime dependencies; users do not need to install Bun. When the build runs on macOS, it automatically re-signs each macOS executable with the JIT entitlements recommended for Bun standalone executables and verifies the signature. A macOS target cross-compiled on another operating system is left unsigned with a warning; release builds run those targets on macOS.
 
 Build and run a locally signed macOS executable with:
 
 ```bash
-bun run build:executables -- --version 0.0.0 --target darwin-arm64
+./bun run build:executables -- --target darwin-arm64
 codesign --verify --deep --strict dist/timecalc-v0.0.0-darwin-arm64
 dist/timecalc-v0.0.0-darwin-arm64 --version
 ```
@@ -780,26 +831,63 @@ dist/timecalc-v0.0.0-darwin-arm64 --version
 Build a subset by repeating `--target`:
 
 ```bash
-bun run build:executables -- \
-  --version 1.2.3 \
+./bun run build:executables -- \
   --target linux-amd64 \
   --target darwin-arm64
 ```
 
-Use `--outdir PATH` to change the output directory. Run `bun run build:executables -- --help` for the complete interface.
+Use `--outdir PATH` to change the output directory. Run `./bun run build:executables -- --help` for the complete interface.
+
+### npm packages
+
+The npm distribution consists of a launcher package and one package per executable:
+
+| Package | Contents |
+|---|---|
+| `@tigerdata/timecalc` | Node.js launcher (`bin/timecalc.js`) with exact-pinned `optionalDependencies` on the platform packages |
+| `@tigerdata/timecalc-<target>` | `bin/timecalc` (or `timecalc.exe`) for one target, with `os` and `cpu` fields so npm installs only the matching package |
+
+The launcher source is committed in [`npm/timecalc/`](npm/timecalc/); its `package.json` there is a template whose version is always `0.0.0`. Everything that is published is generated into the gitignored `npm/dist/` directory:
+
+```bash
+./bun run build:executables
+./bun run build:npm
+```
+
+`build:npm` copies each executable from `dist/`, writes the platform `package.json` files, and stamps the release version into the launcher's `version` and `optionalDependencies`. Pass `--target` to generate a subset, `--version X.Y.Z` to override the version, and `--placeholder` to generate metadata-only packages (used once when the packages were first created on npm). Test the result locally by packing and installing the tarballs into a scratch project:
+
+```bash
+(cd npm/dist/darwin-arm64 && npm pack --pack-destination /tmp/timecalc-npm)
+(cd npm/dist/timecalc && npm pack --pack-destination /tmp/timecalc-npm)
+mkdir -p /tmp/timecalc-npm/project && cd /tmp/timecalc-npm/project && npm init -y
+npm install ../tigerdata-timecalc-darwin-arm64-0.0.0.tgz ../tigerdata-timecalc-0.0.0.tgz
+npx timecalc --version
+```
+
+CI performs the same check for `linux-amd64` on every push and pull request.
+
+### Releasing
+
+Releases are cut from `main` with [`@tigerdata/bump-release`](https://www.npmjs.com/package/@tigerdata/bump-release):
+
+```bash
+./bun release patch     # or minor, major, or an explicit X.Y.Z
+```
+
+The script refuses to run unless the working tree is clean, the current branch is `main` and up to date with `origin/main`, and the new version is greater than the current one and not already tagged. It then bumps `version` in `package.json`, commits `release: vX.Y.Z`, creates the annotated tag `vX.Y.Z`, and pushes the commit and tag together. Pushing the tag triggers the release workflow.
 
 ### Automation
 
-The GitHub Actions workflow in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on pushes to `main`, pull requests, and manual dispatches. It installs the locked dependencies with Bun 1.4.0, type-checks the project, lints the grammar, runs the Bun and YAML test suites, and verifies a production bundle.
+The GitHub Actions workflow in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on pushes to `main`, pull requests, and manual dispatches. It installs the locked dependencies with `./bun ci`, type-checks the project, lints the grammar, checks the plugin skill copy, runs the Bun and YAML test suites, builds the Linux AMD64 executable, and installs and runs the generated npm packages through `npx`.
 
-The release workflow in [`.github/workflows/release.yml`](.github/workflows/release.yml) runs when `main` is tagged with an exact `vX.Y.Z` tag, for example:
+The release workflow in [`.github/workflows/release.yml`](.github/workflows/release.yml) runs when `main` is tagged with an exact `vX.Y.Z` tag that matches the version in `package.json` (which `./bun release` guarantees). It:
 
-```bash
-git tag v1.2.3
-git push origin v1.2.3
-```
+1. reruns all checks and verifies that the tag matches `package.json`;
+2. builds the six executables, running the macOS targets on a macOS runner so they are signed and verified with JIT entitlements;
+3. packages each executable with `LICENSE` and `NOTICE`, generates `SHA256SUMS`, and publishes a GitHub Release with generated release notes (Unix assets use `.tar.gz`; Windows assets use `.zip`);
+4. generates the npm packages and publishes them, platform packages first and the launcher last, using [npm trusted publishing](https://docs.npmjs.com/trusted-publishers) (GitHub Actions OIDC; no npm tokens are stored). Packages whose version already exists on npm are skipped, so a failed run can be retried.
 
-It reruns all checks, builds the five supported executables, signs and verifies the macOS binary with JIT entitlements, packages each with `LICENSE` and `NOTICE`, generates `SHA256SUMS`, and publishes a GitHub Release with generated release notes. Unix assets use `.tar.gz`; Windows assets use `.zip`. macOS AMD64 is intentionally not built.
+Trusted publishing must be configured once per package on npmjs.com (Settings -> Trusted publisher: GitHub Actions, repository `timescale/timecalc-mcp`, workflow `release.yml`), which requires the package to exist. The packages were created with `./bun run build:npm -- --placeholder --version 0.0.1` followed by a manual `npm publish` in each `npm/dist/*` directory; those placeholder versions are deprecated on npm.
 
 The automated suite covers:
 

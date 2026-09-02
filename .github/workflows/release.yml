@@ -17,6 +17,8 @@ jobs:
     name: Test release
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    outputs:
+      version: ${{ steps.version.outputs.version }}
 
     steps:
       - name: Check out repository
@@ -39,25 +41,35 @@ jobs:
             exit 1
           fi
 
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.4.0
-
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: ./bun ci
+
+      - name: Verify package.json version matches tag
+        id: version
+        shell: bash
+        run: |
+          package_version="$(./bun -e 'console.log(require("./package.json").version)')"
+          tag_version="${GITHUB_REF_NAME#v}"
+          if [ "$package_version" != "$tag_version" ]; then
+            echo "package.json version ($package_version) does not match tag ($tag_version)" >&2
+            exit 1
+          fi
+          echo "version=${package_version}" >> "$GITHUB_OUTPUT"
 
       - name: Type-check
-        run: bun run typecheck
+        run: ./bun run typecheck
 
       - name: Lint grammar
-        run: bun run grammar:lint
+        run: ./bun run grammar:lint
+
+      - name: Check Claude Code plugin skill is in sync
+        run: ./bun run plugin:check
 
       - name: Run test suite
-        run: bun test
+        run: ./bun test
 
       - name: Run YAML conformance runner
-        run: bun run test:cases
+        run: ./bun run test:cases
 
   build:
     name: Build ${{ matrix.target }}
@@ -73,6 +85,8 @@ jobs:
             runner: ubuntu-latest
           - target: linux-arm64
             runner: ubuntu-latest
+          - target: darwin-amd64
+            runner: macos-14
           - target: darwin-arm64
             runner: macos-14
           - target: windows-amd64
@@ -80,49 +94,33 @@ jobs:
           - target: windows-arm64
             runner: ubuntu-latest
 
+    env:
+      VERSION: ${{ needs.test.outputs.version }}
+
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
 
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.4.0
-
       - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Read version from tag
-        id: version
-        shell: bash
-        run: |
-          tag="${GITHUB_REF_NAME}"
-          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Tag must have vX.Y.Z format: $tag" >&2
-            exit 1
-          fi
-          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+        run: ./bun ci
 
       - name: Build executable
-        run: >-
-          bun run build:executables --
-          --version "${{ steps.version.outputs.version }}"
-          --target "${{ matrix.target }}"
+        run: ./bun run build:executables -- --target "${{ matrix.target }}"
 
       - name: Verify Linux AMD64 executable
         if: matrix.target == 'linux-amd64'
         shell: bash
         run: |
-          executable="dist/timecalc-v${{ steps.version.outputs.version }}-linux-amd64"
+          executable="dist/timecalc-v${VERSION}-linux-amd64"
           chmod +x "$executable"
-          test "$("$executable" --version)" = "${{ steps.version.outputs.version }}"
+          test "$("$executable" --version)" = "$VERSION"
           test "$("$executable" '(add 2025-01-31 P1M)')" = "2025-02-28"
 
-      - name: Verify macOS ARM64 signature and JIT entitlements
-        if: matrix.target == 'darwin-arm64'
+      - name: Verify macOS signature and JIT entitlements
+        if: startsWith(matrix.target, 'darwin-')
         shell: bash
         run: |
-          executable="dist/timecalc-v${{ steps.version.outputs.version }}-darwin-arm64"
+          executable="dist/timecalc-v${VERSION}-${{ matrix.target }}"
           codesign --verify --deep --strict --verbose=2 "$executable"
           codesign -d --entitlements :- "$executable" > "$RUNNER_TEMP/timecalc-entitlements.plist" 2>/dev/null
           test "$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.cs.allow-jit' "$RUNNER_TEMP/timecalc-entitlements.plist")" = "true"
@@ -131,8 +129,20 @@ jobs:
         if: matrix.target == 'darwin-arm64' && runner.arch == 'ARM64'
         shell: bash
         run: |
-          executable="dist/timecalc-v${{ steps.version.outputs.version }}-darwin-arm64"
-          test "$("$executable" --version)" = "${{ steps.version.outputs.version }}"
+          executable="dist/timecalc-v${VERSION}-darwin-arm64"
+          test "$("$executable" --version)" = "$VERSION"
+          test "$("$executable" '(add 2025-01-31 P1M)')" = "2025-02-28"
+
+      - name: Verify macOS AMD64 executable
+        if: matrix.target == 'darwin-amd64'
+        shell: bash
+        run: |
+          executable="dist/timecalc-v${VERSION}-darwin-amd64"
+          if [ "$(uname -m)" = "arm64" ] && ! arch -x86_64 /usr/bin/true 2> /dev/null; then
+            echo "Rosetta is not available on this runner; skipping execution test"
+            exit 0
+          fi
+          test "$("$executable" --version)" = "$VERSION"
           test "$("$executable" '(add 2025-01-31 P1M)')" = "2025-02-28"
 
       - name: Upload executable
@@ -145,20 +155,18 @@ jobs:
 
   release:
     name: Publish GitHub release
-    needs: build
+    needs: [test, build]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: write
 
+    env:
+      VERSION: ${{ needs.test.outputs.version }}
+
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
-
-      - name: Read version from tag
-        id: version
-        shell: bash
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
       - name: Download executables
         uses: actions/download-artifact@v4
@@ -171,12 +179,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          version="${{ steps.version.outputs.version }}"
           mkdir -p release staging
 
           package_tar() {
             target="$1"
-            asset="timecalc-v${version}-${target}"
+            asset="timecalc-v${VERSION}-${target}"
             mkdir -p "staging/${asset}"
             cp "dist/${asset}" "staging/${asset}/timecalc"
             chmod +x "staging/${asset}/timecalc"
@@ -186,7 +193,7 @@ jobs:
 
           package_zip() {
             target="$1"
-            asset="timecalc-v${version}-${target}"
+            asset="timecalc-v${VERSION}-${target}"
             mkdir -p "staging/${asset}"
             cp "dist/${asset}.exe" "staging/${asset}/timecalc.exe"
             cp LICENSE NOTICE "staging/${asset}/"
@@ -195,6 +202,7 @@ jobs:
 
           package_tar linux-amd64
           package_tar linux-arm64
+          package_tar darwin-amd64
           package_tar darwin-arm64
           package_zip windows-amd64
           package_zip windows-arm64
@@ -212,3 +220,65 @@ jobs:
             release/*.tar.gz
             release/*.zip
             release/SHA256SUMS
+
+  publish-npm:
+    name: Publish npm packages
+    needs: [test, release]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      # Required for OIDC trusted publishing to npm (https://docs.npmjs.com/trusted-publishers)
+      id-token: write
+      contents: read
+
+    env:
+      VERSION: ${{ needs.test.outputs.version }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Node
+        # Node 24 ships npm >= 11.5.1, required for OIDC authentication to npm
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install dependencies
+        run: ./bun ci
+
+      - name: Download executables
+        uses: actions/download-artifact@v4
+        with:
+          pattern: executable-*
+          path: dist
+          merge-multiple: true
+
+      - name: Generate npm packages
+        run: ./bun run build:npm -- --version "$VERSION"
+
+      - name: Publish to npm
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          publish() {
+            dir="$1"
+            name="$(node -p "require('./${dir}/package.json').name")"
+            if npm view "${name}@${VERSION}" version > /dev/null 2>&1; then
+              echo "${name}@${VERSION} is already published; skipping"
+              return
+            fi
+            echo "Publishing ${name}@${VERSION}"
+            (cd "$dir" && npm publish --access public)
+          }
+
+          # Platform packages first so the launcher's optionalDependencies always resolve.
+          for dir in npm/dist/*/; do
+            dir="${dir%/}"
+            if [ "$(basename "$dir")" != "timecalc" ]; then
+              publish "$dir"
+            fi
+          done
+          publish npm/dist/timecalc

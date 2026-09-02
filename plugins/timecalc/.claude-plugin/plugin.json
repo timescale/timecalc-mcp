@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "timecalc",
+  "displayName": "timecalc",
+  "description": "Deterministic date, calendar, time-zone, and duration calculations. Bundles the timecalc MCP server (via npx @tigerdata/timecalc) and an Agent Skill that teaches Claude when and how to use it.",
+  "author": {
+    "name": "TigerData",
+    "url": "https://tigerdata.com"
+  },
+  "homepage": "https://github.com/timescale/timecalc-mcp#readme",
+  "repository": "https://github.com/timescale/timecalc-mcp",
+  "license": "Apache-2.0",
+  "keywords": ["date", "time", "timezone", "duration", "calendar", "temporal", "mcp"]
+}

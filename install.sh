@@ -24,9 +24,6 @@ main() {
   os="$(detect_os)"
   arch="$(detect_arch)"
   check_extractor "$os"
-  if [ "$os" = "darwin" ] && [ "$arch" = "amd64" ]; then
-    err "macOS Intel (AMD64) is not supported; use an Apple Silicon Mac."
-  fi
 
   target="${os}-${arch}"
   case "$os" in

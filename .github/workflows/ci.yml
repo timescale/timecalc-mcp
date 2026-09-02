@@ -16,39 +16,71 @@ concurrency:
 
 jobs:
   test:
-    name: Test with Bun 1.4
+    name: Test
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
 
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
+      - name: Set up Node
+        uses: actions/setup-node@v4
         with:
-          bun-version: 1.4.0
+          node-version: "24"
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: ./bun ci
 
       - name: Type-check
-        run: bun run typecheck
+        run: ./bun run typecheck
 
       - name: Lint grammar
-        run: bun run grammar:lint
+        run: ./bun run grammar:lint
 
       - name: Check installer syntax
         run: sh -n install.sh
 
+      - name: Check Claude Code plugin skill is in sync
+        run: ./bun run plugin:check
+
       - name: Run test suite
-        run: bun test
+        run: ./bun test
 
       - name: Run YAML conformance runner
-        run: bun run test:cases
+        run: ./bun run test:cases
+
+      - name: Read package version
+        id: version
+        run: echo "version=$(./bun -e 'console.log(require("./package.json").version)')" >> "$GITHUB_OUTPUT"
 
       - name: Verify standalone executable build
         run: |
-          bun run build:executables -- --target linux-amd64
-          test "$(dist/timecalc-v0.0.0-linux-amd64 --version)" = "0.0.0"
-          test "$(dist/timecalc-v0.0.0-linux-amd64 '(add 2025-01-31 P1M)')" = "2025-02-28"
+          ./bun run build:executables -- --target linux-amd64
+          executable="dist/timecalc-v${{ steps.version.outputs.version }}-linux-amd64"
+          test "$("$executable" --version)" = "${{ steps.version.outputs.version }}"
+          test "$("$executable" '(add 2025-01-31 P1M)')" = "2025-02-28"
+
+      - name: Verify npm packages install and run
+        run: |
+          set -euo pipefail
+          version="${{ steps.version.outputs.version }}"
+          ./bun run build:npm -- --target linux-amd64
+
+          tarballs="$RUNNER_TEMP/tarballs"
+          project="$RUNNER_TEMP/npm-smoke"
+          mkdir -p "$tarballs" "$project"
+          (cd npm/dist/linux-amd64 && npm pack --silent --pack-destination "$tarballs")
+          (cd npm/dist/timecalc && npm pack --silent --pack-destination "$tarballs")
+
+          cd "$project"
+          npm init -y > /dev/null
+          npm install --silent \
+            "$tarballs/tigerdata-timecalc-linux-amd64-${version}.tgz" \
+            "$tarballs/tigerdata-timecalc-${version}.tgz"
+          test "$(npx timecalc --version)" = "$version"
+          test "$(npx timecalc '(add 2025-01-31 P1M)')" = "2025-02-28"
+          if npx timecalc '(bogus' 2> /dev/null; then
+            echo "Expected a non-zero exit code for a parse error" >&2
+            exit 1
+          fi
