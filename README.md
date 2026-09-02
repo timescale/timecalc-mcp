@@ -1,35 +1,144 @@
 # timecalc
 
-`timecalc` is a deterministic-by-default date-math evaluator for the command line and the Model Context Protocol (MCP). It uses a small S-expression DSL and Bun's built-in implementation of JavaScript Temporal. An opt-in system-context mode supplies the host clock and time zone for interactive agents.
+`timecalc` gives AI agents and humans a small, reliable calculator for date, time-zone, and duration arithmetic. It runs as both a Model Context Protocol (MCP) server and a command-line tool, with both interfaces backed by the same Temporal evaluator.
 
-```console
-$ bun run timecalc '(add 2025-01-31 P1M)'
-2025-02-28
-```
+## Why an MCP date calculator?
 
-The DSL preserves the semantic differences between calendar dates, absolute instants, zoned date-times, and durations. It does not evaluate JavaScript or parse natural-language dates.
+Date math is deceptively difficult. Month lengths vary, leap years matter, daylight-saving transitions make “one day” different from “24 hours,” and an answer involving “today” is meaningless without a clock and time zone. Language models should not have to approximate those rules or generate ad hoc date code.
 
-## Requirements
+The timecalc MCP server lets an agent translate a user's request into one constrained expression and delegate the calculation to Bun's implementation of JavaScript Temporal. The result is typed and machine-readable. Expressions are inspectable, and calculations can be replayed with the same explicit context. The evaluator never uses JavaScript `eval` and does not parse natural-language dates itself.
 
-- Bun 1.4.x
+At a glance:
 
-`timecalc` uses the global `Temporal` implementation included with Bun 1.4; no Temporal polyfill is required.
+- **One MCP tool:** `evaluate_date_expression`
+- **Four Temporal types:** `PlainDate`, `Instant`, `ZonedDateTime`, and `Duration`
+- **Explicit semantics:** calendar dates, absolute instants, zoned times, and durations remain distinct
+- **Current-time support:** deterministic context injection or an opt-in host clock and time zone
+- **Same behavior everywhere:** MCP and CLI share the parser, evaluator, errors, and serialization
+- **Portable releases:** standalone executables do not require Bun at runtime
 
-## Installation
+## Guide to this README
 
-From a source checkout:
+- Start with [Quick start](#quick-start) to run the CLI or configure an MCP client.
+- Read [Evaluation context and `now`](#evaluation-context-and-now) before handling “now,” “today,” or local-time questions.
+- Use the [Language overview](#language-overview) and [Operator reference](#operator-reference) when writing expressions.
+- See the [CLI](#cli) and [MCP server](#mcp-server) sections for complete interface details.
+- Contributors can jump to [Architecture](#architecture) and [Development](#development).
+
+## Quick start
+
+### Install a release binary (recommended)
+
+Download the archive for your platform from the [latest GitHub release](https://github.com/timescale/timecalc-mcp/releases/latest):
+
+| Platform | Release asset |
+|---|---|
+| Linux AMD64 | `timecalc-v<version>-linux-amd64.tar.gz` |
+| Linux ARM64 | `timecalc-v<version>-linux-arm64.tar.gz` |
+| macOS ARM64 | `timecalc-v<version>-darwin-arm64.tar.gz` |
+| Windows AMD64 | `timecalc-v<version>-windows-amd64.zip` |
+| Windows ARM64 | `timecalc-v<version>-windows-arm64.zip` |
+
+Each archive contains `timecalc` (or `timecalc.exe`), `LICENSE`, and `NOTICE`. The executable includes Bun and all runtime dependencies, so **Bun does not need to be installed**.
+
+Download `SHA256SUMS` from the same release and verify the archive before extracting it. For example, on Linux:
 
 ```bash
-bun install --frozen-lockfile
+ARCHIVE=timecalc-vX.Y.Z-linux-amd64.tar.gz  # replace X.Y.Z
+grep -F "$ARCHIVE" SHA256SUMS | sha256sum -c -
 ```
 
-Run the CLI through the package script:
+On Linux or macOS, extract the archive and install the executable:
 
 ```bash
-bun run timecalc --help
+VERSION=X.Y.Z                 # replace with the release version
+TARGET=linux-amd64            # or linux-arm64 / darwin-arm64
+ARCHIVE="timecalc-v${VERSION}-${TARGET}.tar.gz"
+
+mkdir -p "$HOME/.local/bin"
+tar -xzf "$ARCHIVE"
+install -m 0755 timecalc "$HOME/.local/bin/timecalc"
+"$HOME/.local/bin/timecalc" --version
 ```
 
-The package also declares a `timecalc` executable for use when installed or linked as a package.
+Add `$HOME/.local/bin` to `PATH` if it is not already present. On macOS, the binary is ad-hoc signed but not notarized; depending on Gatekeeper policy, its first launch may require explicit approval.
+
+On Windows, verify the archive against `SHA256SUMS`, extract the `.zip`, and move `timecalc.exe` to a directory on `PATH`. Then confirm the executable from PowerShell:
+
+```powershell
+.\timecalc.exe --version
+```
+
+To develop timecalc or run it from source, see [Development](#development).
+
+### As an MCP server
+
+For an interactive agent, system-context mode is usually the most useful configuration because many agent harnesses do not expose their current clock or local time zone:
+
+```json
+{
+  "mcpServers": {
+    "timecalc": {
+      "command": "timecalc",
+      "args": ["mcp", "--system-context"]
+    }
+  }
+}
+```
+
+This still permits a caller to override the clock and zone for reproducible calculations. Use `args: ["mcp"]` instead when all context must be supplied explicitly. See [MCP client configuration](#mcp-client-configuration) for source-checkout configuration.
+
+Typical agent requests include:
+
+- “What date is 30 days from today?”
+- “How many calendar months are between these dates?”
+- “Convert this timestamp to America/New_York.”
+- “Will adding one day across this DST boundary preserve the local hour?”
+
+A current-local-date calculation is explicit in the DSL:
+
+```lisp
+(to-date (with-time-zone (now) (default-time-zone)))
+```
+
+### As a CLI
+
+```bash
+# Deterministic date arithmetic; no clock or zone is needed
+timecalc '(add 2025-01-31 P1M)'
+
+# Use the host clock and time zone
+timecalc --system-context \
+  '(to-date (with-time-zone (now) (default-time-zone)))'
+```
+
+## Evaluation context and `now`
+
+`now` is represented as a `Temporal.Instant`: one absolute point on the timeline. A time zone is a separate context value because the same instant can correspond to different local dates around the world.
+
+There are two context modes:
+
+- **Deterministic mode is the default.** The evaluator does not read the host clock or time zone. Expressions that do not depend on current context work without any extra input. `(now)` and `(default-time-zone)` return `MISSING_CONTEXT` unless their values are supplied explicitly.
+- **System-context mode is opt-in.** `--system-context` fills missing values from `Temporal.Now.instant()` and `Temporal.Now.timeZoneId()`. Explicit `now` and time-zone inputs always take precedence. The system zone belongs to the process running timecalc; it may be UTC or otherwise differ from the end user's zone, especially in a container or on a remote host.
+
+For a user-specific local-time question, pass that user's IANA zone explicitly instead of assuming the system zone.
+
+The context is resolved once at the start of each evaluation. Therefore, every `(now)` within one expression returns the same instant. In system-context mode, a later tool call resolves a new instant. Successful structured results include the resolved context so an answer involving “now” or “today” is auditable.
+
+Convert the instant before asking calendar questions:
+
+```lisp
+; Current instant
+(now)
+
+; Current zoned date-time
+(with-time-zone (now) (default-time-zone))
+
+; Current local date
+(to-date (with-time-zone (now) (default-time-zone)))
+```
+
+The optional default calendar is validated and reported as context, but current operators do not use it for implicit conversion. Temporal values continue to carry their own calendars.
 
 ## Language overview
 
@@ -199,7 +308,7 @@ Temporal requires the appropriate unit option for the value being rounded.
 | `to-instant` | `(to-instant zoned-date-time)` | `Instant` |
 | `to-date` | `(to-date zoned-date-time)` | Local `PlainDate` |
 
-`now` and `default-time-zone` require explicit context options or system-context mode. They return `MISSING_CONTEXT` when the corresponding value is unavailable.
+`now` and `default-time-zone` read the resolved evaluation context described above. They return `MISSING_CONTEXT` when the corresponding value is unavailable.
 
 ```lisp
 (with-time-zone 2025-06-01T12:00:00Z "America/New_York")
@@ -212,7 +321,7 @@ Temporal requires the appropriate unit option for the value being rounded.
 ; the current local date
 ```
 
-The last expression samples no clock itself: `(now)` reads the instant captured once in the evaluation context.
+In system-context mode, the host clock is sampled once before evaluation; `(now)` only reads that captured instant.
 
 ### Inspection
 
@@ -242,8 +351,8 @@ Inspection operators take one argument and return a number or string:
 `eval` is optional:
 
 ```bash
-bun run timecalc '(add 2025-01-31 P1M)'
-bun run timecalc eval '(add 2025-01-31 P1M)'
+timecalc '(add 2025-01-31 P1M)'
+timecalc eval '(add 2025-01-31 P1M)'
 ```
 
 Expressions containing shell-significant characters or whitespace should be quoted. Use `--` before a top-level negative literal if required by your shell or invocation environment.
@@ -251,7 +360,7 @@ Expressions containing shell-significant characters or whitespace should be quot
 ### Read from stdin
 
 ```bash
-echo '(day-of-week 2025-06-01)' | bun run timecalc --stdin
+echo '(day-of-week 2025-06-01)' | timecalc --stdin
 ```
 
 An expression argument and `--stdin` cannot be used together.
@@ -261,14 +370,14 @@ An expression argument and `--stdin` cannot be used together.
 `validate` performs parsing, type checking, and evaluation:
 
 ```console
-$ bun run timecalc validate '(add 2025-01-31 P1M)'
+$ timecalc validate '(add 2025-01-31 P1M)'
 valid
 ```
 
 ### JSON output
 
 ```bash
-bun run timecalc --json --pretty \
+timecalc --json --pretty \
   '(add 2025-03-08T12:00:00-05:00[America/New_York] P1D)'
 ```
 
@@ -313,7 +422,7 @@ Errors are structured when `--json` is used:
 -V, --version           Show version
 ```
 
-`(now)` reads `--now`, and `(default-time-zone)` reads `--time-zone`. With `--system-context`, missing values come from `Temporal.Now.instant()` and `Temporal.Now.timeZoneId()`; explicit options take precedence. The system clock is sampled once per evaluation. Resolved context is included in JSON output.
+`(now)` reads `--now`, and `(default-time-zone)` reads `--time-zone`. With `--system-context`, missing values come from `Temporal.Now.instant()` and `Temporal.Now.timeZoneId()`; explicit options take precedence. See [Evaluation context and `now`](#evaluation-context-and-now) for the complete resolution rules. Resolved context is included in successful JSON output.
 
 CLI exit codes:
 
@@ -323,19 +432,20 @@ CLI exit codes:
 | `1` | Invalid expression, type, Temporal operation, or value |
 | `2` | Invalid CLI usage or internal failure |
 
-### Grammar diagrams
-
-```bash
-bun run timecalc grammar --output docs/grammar.html
-```
+The `grammar` command is a source-development utility because it depends on the project's diagram generator. Release-binary users can read the committed [HTML](docs/grammar.html) and [Markdown](docs/grammar.md) diagrams directly.
 
 ## MCP server
 
-The MCP server uses the official TypeScript SDK and communicates over stdio. Start it with either command:
+The MCP server is built into the standalone executable and communicates over stdio. Start it in deterministic mode with:
 
 ```bash
-bun run mcp
-bun run timecalc mcp
+timecalc mcp
+```
+
+Or enable host clock and time-zone defaults for interactive use:
+
+```bash
+timecalc mcp --system-context
 ```
 
 The server is stateless and exposes exactly one tool:
@@ -348,12 +458,21 @@ The tool is annotated as read-only, non-destructive, and closed-world. It is ide
 
 ### Tool input
 
+A context-free request only needs an expression:
+
 ```json
 {
-  "expression": "(add 2025-01-31 P1M)",
-  "now": "2025-01-01T00:00:00Z",
-  "defaultTimeZone": "UTC",
-  "defaultCalendar": "iso8601"
+  "expression": "(add 2025-01-31 P1M)"
+}
+```
+
+A deterministic current-local-date request supplies its clock and zone explicitly:
+
+```json
+{
+  "expression": "(to-date (with-time-zone (now) (default-time-zone)))",
+  "now": "2025-01-01T04:30:00Z",
+  "defaultTimeZone": "America/New_York"
 }
 ```
 
@@ -362,24 +481,28 @@ The tool is annotated as read-only, non-destructive, and closed-world. It is ide
 | `expression` | yes | One DSL expression, at most 64 KiB |
 | `now` | no | Explicit Temporal instant for clock-dependent operations |
 | `defaultTimeZone` | no | IANA or fixed-offset time-zone identifier |
-| `defaultCalendar` | no | Temporal calendar identifier |
+| `defaultCalendar` | no | Temporal calendar identifier; validated and reported, but not implicitly applied by current operators |
 
-Unknown input properties are rejected. Optional context fields are validated and passed to the shared evaluator. `(now)` and `(default-time-zone)` read these values. Explicit request fields always override system defaults.
+Unknown input properties are rejected. Optional context fields are validated and passed to the shared evaluator. `(now)` and `(default-time-zone)` read the corresponding values. In system-context mode, explicit request fields override host defaults.
 
 ### Successful result
 
-MCP responses include concise text for display and structured content for programmatic use. When context is resolved, structured output also records the exact values used:
+MCP responses include concise text for display and structured content for programmatic use. When context is resolved, `structuredContent` records the exact values used:
 
 ```json
 {
-  "ok": true,
-  "type": "date",
-  "value": "2024-12-31",
-  "calendar": "iso8601",
-  "context": {
-    "now": "2025-01-01T04:30:00Z",
-    "defaultTimeZone": "America/New_York",
-    "defaultCalendar": "iso8601"
+  "content": [
+    { "type": "text", "text": "2024-12-31" }
+  ],
+  "structuredContent": {
+    "ok": true,
+    "type": "date",
+    "value": "2024-12-31",
+    "calendar": "iso8601",
+    "context": {
+      "now": "2025-01-01T04:30:00Z",
+      "defaultTimeZone": "America/New_York"
+    }
   }
 }
 ```
@@ -453,37 +576,7 @@ Clients that discover project skills from `.agents/skills/` can use it directly.
 
 ### MCP client configuration
 
-During development, use an absolute source path:
-
-```json
-{
-  "mcpServers": {
-    "timecalc": {
-      "command": "bun",
-      "args": [
-        "run",
-        "/absolute/path/to/timecalc/src/cli.ts",
-        "mcp"
-      ]
-    }
-  }
-}
-```
-
-When the `timecalc` executable is installed, deterministic mode requires agents to pass explicit clock and zone context:
-
-```json
-{
-  "mcpServers": {
-    "timecalc": {
-      "command": "timecalc",
-      "args": ["mcp"]
-    }
-  }
-}
-```
-
-For interactive agents that cannot discover the current time or host zone, enable system context:
+Use the installed release binary for normal MCP operation. For interactive agents that cannot discover the current time or host zone, enable system context:
 
 ```json
 {
@@ -496,9 +589,40 @@ For interactive agents that cannot discover the current time or host zone, enabl
 }
 ```
 
-System-context mode resolves missing request context from the host for each tool call. `TZ` and the host environment determine the default time zone.
+System-context mode resolves missing request context from the host for each tool call. The runtime and host environment, including `TZ` where supported, determine the default time zone. This is the time zone of the machine or container running timecalc, not necessarily the end user's time zone.
 
-Launch MCP Inspector with:
+For deterministic operation, omit `--system-context`. Context-free calculations still work normally; expressions using `(now)` or `(default-time-zone)` then require explicit tool inputs:
+
+```json
+{
+  "mcpServers": {
+    "timecalc": {
+      "command": "timecalc",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+Contributors running directly from a source checkout can configure an absolute source path instead:
+
+```json
+{
+  "mcpServers": {
+    "timecalc": {
+      "command": "bun",
+      "args": [
+        "run",
+        "/absolute/path/to/timecalc/src/cli.ts",
+        "mcp",
+        "--system-context"
+      ]
+    }
+  }
+}
+```
+
+Launch MCP Inspector from a source checkout with:
 
 ```bash
 bun run mcp:inspect
@@ -514,7 +638,7 @@ Only stdio transport is implemented. HTTP transport is intentionally deferred un
 ## Determinism and safety
 
 - Deterministic mode never uses the host clock or local time zone implicitly.
-- System-context mode is explicit, samples the clock once per evaluation, reports the resolved context, and marks the MCP tool non-idempotent.
+- System-context mode is explicit, samples the clock once per evaluation, reports resolved context in successful structured output, and marks the MCP tool non-idempotent.
 - Explicit request context overrides system defaults.
 - Tests use injected fixed clocks and explicit zones for system-context behavior.
 - Source is parsed into an AST and never passed to JavaScript `eval`.
