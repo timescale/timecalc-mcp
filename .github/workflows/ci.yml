@@ -38,6 +38,9 @@ jobs:
       - name: Lint grammar
         run: bun run grammar:lint
 
+      - name: Check installer syntax
+        run: sh -n install.sh
+
       - name: Run test suite
         run: bun test
 

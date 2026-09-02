@@ -36,6 +36,8 @@ Options:
 
 Targets:
 ${TARGETS.map((target) => `  ${target.id}`).join("\n")}
+
+macOS targets built on macOS are ad-hoc signed with JIT entitlements.
 `;
 
 const options = await parseOptions(Bun.argv.slice(2));
@@ -72,11 +74,80 @@ for (const target of options.targets) {
     throw new Error(`Build failed for ${target.id} with exit code ${exitCode}`);
   }
 
+  if (target.id === "darwin-arm64") {
+    if (process.platform === "darwin") {
+      await signMacOSExecutable(outfile);
+    } else {
+      console.warn(
+        `Built ${filename} without a macOS signature; build this target on macOS before distribution`,
+      );
+    }
+  }
+
   const { size } = await stat(outfile);
   console.log(`Built ${filename} (${formatBytes(size)})`);
 }
 
 console.log(`Built ${options.targets.length} executable(s) in ${outdir}`);
+
+async function signMacOSExecutable(executable: string): Promise<void> {
+  const entitlements = resolve(import.meta.dir, "macos-entitlements.plist");
+
+  const removeSignature = Bun.spawn({
+    cmd: ["codesign", "--remove-signature", executable],
+    stdin: "ignore",
+    stdout: "ignore",
+    stderr: "ignore",
+  });
+  await removeSignature.exited;
+
+  console.log(`Signing ${executable} with macOS JIT entitlements`);
+  await runCommand([
+    "codesign",
+    "--entitlements",
+    entitlements,
+    "--force",
+    "--deep",
+    "--sign",
+    "-",
+    executable,
+  ], "macOS code signing");
+  await runCommand(
+    ["codesign", "--verify", "--deep", "--strict", "--verbose=2", executable],
+    "macOS signature verification",
+  );
+
+  const inspect = Bun.spawn({
+    cmd: ["codesign", "-d", "--entitlements", ":-", executable],
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "ignore",
+  });
+  const entitlementsOutput = new Response(inspect.stdout).text();
+  const [inspectExitCode, embeddedEntitlements] = await Promise.all([
+    inspect.exited,
+    entitlementsOutput,
+  ]);
+  if (
+    inspectExitCode !== 0 ||
+    !embeddedEntitlements.includes("<key>com.apple.security.cs.allow-jit</key>")
+  ) {
+    throw new Error("macOS signature does not contain the required JIT entitlement");
+  }
+}
+
+async function runCommand(command: string[], description: string): Promise<void> {
+  const child = Bun.spawn({
+    cmd: command,
+    stdin: "ignore",
+    stdout: "inherit",
+    stderr: "inherit",
+  });
+  const exitCode = await child.exited;
+  if (exitCode !== 0) {
+    throw new Error(`${description} failed with exit code ${exitCode}`);
+  }
+}
 
 async function parseOptions(args: string[]): Promise<Options> {
   const packageJson = JSON.parse(await readFile("package.json", "utf8")) as { version?: unknown };

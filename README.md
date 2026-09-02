@@ -29,7 +29,22 @@ At a glance:
 
 ### Install a release binary (recommended)
 
-Download the archive for your platform from the [latest GitHub release](https://github.com/timescale/timecalc-mcp/releases/latest):
+On Linux, macOS, or Windows with a POSIX shell such as Git Bash, install the latest release with:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/timescale/timecalc-mcp/main/install.sh | sh
+```
+
+The installer detects the operating system and architecture, downloads the matching asset from the [latest GitHub release](https://github.com/timescale/timecalc-mcp/releases/latest), verifies it against the release's `SHA256SUMS`, and installs `timecalc` into `$HOME/.local/bin` or `$HOME/bin`. On macOS it also applies a local ad-hoc signature with Bun's recommended JIT entitlements and removes the download quarantine attribute after checksum verification. It never requires Bun. Override the destination or install a specific release when needed:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/timescale/timecalc-mcp/main/install.sh \
+  | TIMECALC_INSTALL_DIR="$HOME/.local/bin" TIMECALC_VERSION=v0.2.0 sh
+```
+
+Ensure the selected installation directory is on `PATH`. To inspect the installer before running it, download [`install.sh`](install.sh) and execute it locally with `sh install.sh`.
+
+For manual installation, download the archive for your platform:
 
 | Platform | Release asset |
 |---|---|
@@ -61,7 +76,7 @@ install -m 0755 timecalc "$HOME/.local/bin/timecalc"
 "$HOME/.local/bin/timecalc" --version
 ```
 
-Add `$HOME/.local/bin` to `PATH` if it is not already present. On macOS, the binary is ad-hoc signed but not notarized; depending on Gatekeeper policy, its first launch may require explicit approval.
+Add `$HOME/.local/bin` to `PATH` if it is not already present. Release macOS binaries are ad-hoc signed with Bun's recommended JIT entitlements but are not Developer ID signed or notarized. A manually downloaded binary may therefore require explicit Gatekeeper approval; the verified installer handles the local ad-hoc signing and quarantine removal automatically.
 
 On Windows, verify the archive against `SHA256SUMS`, extract the `.zip`, and move `timecalc.exe` to a directory on `PATH`. Then confirm the executable from PowerShell:
 
@@ -752,7 +767,15 @@ Outputs are written to `dist/`:
 | Windows AMD64 | `timecalc-v1.2.3-windows-amd64.exe` |
 | Windows ARM64 | `timecalc-v1.2.3-windows-arm64.exe` |
 
-The executables contain the Bun runtime and all runtime dependencies; users do not need to install Bun. The supplied version is embedded in CLI and MCP server metadata.
+The executables contain the Bun runtime and all runtime dependencies; users do not need to install Bun. The supplied version is embedded in CLI and MCP server metadata. When the build runs on macOS, it automatically re-signs the macOS executable with the JIT entitlements recommended for Bun standalone executables and verifies the signature. A macOS target cross-compiled on another operating system is left unsigned with a warning; release builds run that target on macOS.
+
+Build and run a locally signed macOS executable with:
+
+```bash
+bun run build:executables -- --version 0.0.0 --target darwin-arm64
+codesign --verify --deep --strict dist/timecalc-v0.0.0-darwin-arm64
+dist/timecalc-v0.0.0-darwin-arm64 --version
+```
 
 Build a subset by repeating `--target`:
 
@@ -776,7 +799,7 @@ git tag v1.2.3
 git push origin v1.2.3
 ```
 
-It reruns all checks, builds the five supported executables, packages each with `LICENSE` and `NOTICE`, generates `SHA256SUMS`, and publishes a GitHub Release with generated release notes. Unix assets use `.tar.gz`; Windows assets use `.zip`. macOS AMD64 is intentionally not built.
+It reruns all checks, builds the five supported executables, signs and verifies the macOS binary with JIT entitlements, packages each with `LICENSE` and `NOTICE`, generates `SHA256SUMS`, and publishes a GitHub Release with generated release notes. Unix assets use `.tar.gz`; Windows assets use `.zip`. macOS AMD64 is intentionally not built.
 
 The automated suite covers:
 
