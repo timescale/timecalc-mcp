@@ -824,8 +824,8 @@ Build and run a locally signed macOS executable with:
 
 ```bash
 ./bun run build:executables -- --target darwin-arm64
-codesign --verify --deep --strict dist/timecalc-v0.0.0-darwin-arm64
-dist/timecalc-v0.0.0-darwin-arm64 --version
+codesign --verify --deep --strict dist/timecalc-v*-darwin-arm64
+dist/timecalc-v*-darwin-arm64 --version
 ```
 
 Build a subset by repeating `--target`:
@@ -860,7 +860,7 @@ The launcher source is committed in [`npm/timecalc/`](npm/timecalc/); its `packa
 (cd npm/dist/darwin-arm64 && npm pack --pack-destination /tmp/timecalc-npm)
 (cd npm/dist/timecalc && npm pack --pack-destination /tmp/timecalc-npm)
 mkdir -p /tmp/timecalc-npm/project && cd /tmp/timecalc-npm/project && npm init -y
-npm install ../tigerdata-timecalc-darwin-arm64-0.0.0.tgz ../tigerdata-timecalc-0.0.0.tgz
+npm install ../tigerdata-timecalc-darwin-arm64-*.tgz ../tigerdata-timecalc-*.tgz
 npx timecalc --version
 ```
 
