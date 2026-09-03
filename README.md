@@ -23,6 +23,7 @@ At a glance:
 - Read [Evaluation context and `now`](#evaluation-context-and-now) before handling “now,” “today,” or local-time questions.
 - Use the [Language overview](#language-overview) and [Operator reference](#operator-reference) when writing expressions.
 - See the [CLI](#cli) and [MCP server](#mcp-server) sections for complete interface details.
+- Building an agent that queries time-series data? See [Using timecalc with TimescaleDB](#using-timecalc-with-timescaledb).
 - Contributors can jump to [Architecture](#architecture) and [Development](#development).
 
 ## Quick start
@@ -690,6 +691,131 @@ Pinned protocol dependencies:
 - Zod 4.5.4
 
 Only stdio transport is implemented. HTTP transport is intentionally deferred until authentication, origin, session, and rate-limiting requirements are defined.
+
+## Using timecalc with TimescaleDB
+
+When an agent turns a natural-language question into SQL over time-series data, the aggregation is rarely the hard part. The time predicate is. "Yesterday," "the same week last year," and "daily buckets" each have one correct meaning and several plausible wrong ones, and PostgreSQL will evaluate whichever one the agent writes without complaint:
+
+- **Zone.** Hypertable timestamps are `timestamptz` (UTC instants); the user's "Monday" is in `America/Chicago`. `date_trunc('week', now())` in a UTC session can start the week on a different Monday than the user expects.
+- **Calendar versus elapsed.** "Last month" is a calendar month, `now() - interval '30 days'` is not. "Same week last year" could be 52 weeks, 364 days, or one year, and each gives a different range.
+- **Daylight saving.** A local "day" is 23 or 25 hours twice a year. `time_bucket('1 day', time)` without the `timezone` argument buckets in UTC.
+- **Boundaries.** `BETWEEN` on timestamps is inclusive at both ends; time windows should be half-open.
+
+The pattern that avoids this is **resolve, then query**: use timecalc to turn the user's intent into explicit instants, then write SQL whose `WHERE` clause contains literal bounds. The query becomes reproducible and reviewable, and the semantic decisions are visible in the expression rather than buried in `now()` arithmetic. Every example below uses `now` = `2026-09-03T14:22:07Z` so the results can be reproduced with `--now`.
+
+### A local calendar day as instant bounds
+
+"Average CPU per hour yesterday" for a user in Chicago. Floor the current zoned time to the start of today, step back one calendar day, and convert both bounds to instants:
+
+```lisp
+(to-instant (subtract (round (with-time-zone (now) "America/Chicago")
+                             :smallest-unit "day" :rounding-mode "floor")
+                      P1D))
+; 2026-09-02T05:00:00Z
+
+(to-instant (round (with-time-zone (now) "America/Chicago")
+                   :smallest-unit "day" :rounding-mode "floor"))
+; 2026-09-03T05:00:00Z
+```
+
+```sql
+SELECT time_bucket('1 hour', time, 'America/Chicago') AS bucket, avg(cpu)
+FROM metrics
+WHERE time >= '2026-09-02T05:00:00Z' AND time < '2026-09-03T05:00:00Z'
+GROUP BY bucket
+ORDER BY bucket;
+```
+
+The `timezone` argument to `time_bucket` matters for buckets of a day or longer and for zones with non-hour offsets; passing it always keeps the query correct if the bucket width changes.
+
+### Rolling window versus calendar week
+
+"The last seven days" is a rolling window ending at the start of today:
+
+```lisp
+(to-instant (subtract (round (with-time-zone (now) "America/Chicago")
+                             :smallest-unit "day" :rounding-mode "floor")
+                      P7D))
+; 2026-08-27T05:00:00Z
+```
+
+"This week" is a calendar week starting Monday. Temporal rounds to days and smaller only, so find the weekday first and then step back the right number of days in a second call:
+
+```lisp
+(day-of-week (to-date (with-time-zone (now) "America/Chicago")))
+; 4  (Thursday; 1 = Monday, 7 = Sunday)
+
+(to-instant (subtract (round (with-time-zone (now) "America/Chicago")
+                             :smallest-unit "day" :rounding-mode "floor")
+                      P3D))
+; 2026-08-31T05:00:00Z
+```
+
+For weekly buckets that start on the same Monday, pass that instant as `time_bucket`'s `origin`:
+
+```sql
+SELECT time_bucket('7 days', time, 'America/Chicago', origin => '2026-08-31T05:00:00Z') AS week, ...
+```
+
+### The same window last year
+
+Shift a zoned bound by a calendar year before converting it, so the result lands on the same local date even though the offset may differ:
+
+```lisp
+(to-instant (subtract (round (with-time-zone (now) "America/Chicago")
+                             :smallest-unit "day" :rounding-mode "floor")
+                      P1Y))
+; 2025-09-03T05:00:00Z
+```
+
+Subtracting `P1Y` from an already-converted `Instant` is rejected, because a year has no fixed length. That error is intentional: it forces the calendar-versus-elapsed decision to be made in a zone.
+
+### Month boundaries
+
+Temporal does not round to months, so resolve month boundaries with calendar-date arithmetic and let PostgreSQL attach the zone:
+
+```lisp
+(subtract 2026-09-01 P1M)
+; 2026-08-01
+```
+
+```sql
+WHERE time >= timestamptz '2026-08-01 00:00 America/Chicago'
+  AND time <  timestamptz '2026-09-01 00:00 America/Chicago'
+```
+
+If the agent writes a zoned literal directly, timecalc validates the offset against the zone. `2026-01-01T00:00:00-05:00[America/Chicago]` is rejected with `INVALID_TEMPORAL_VALUE` because Chicago is at `-06:00` in January, which is exactly the mistake a model is likely to make when it types offsets from memory.
+
+### Gap filling and retention cutoffs
+
+`time_bucket_gapfill` requires explicit `start` and `finish` arguments; the resolved instants from any example above are what it needs:
+
+```sql
+SELECT time_bucket_gapfill('15 minutes', time,
+                           start  => '2026-09-02T05:00:00Z'::timestamptz,
+                           finish => '2026-09-03T05:00:00Z'::timestamptz) AS bucket,
+       locf(avg(cpu))
+FROM metrics
+WHERE time >= '2026-09-02T05:00:00Z' AND time < '2026-09-03T05:00:00Z'
+GROUP BY bucket
+ORDER BY bucket;
+```
+
+A retention or compression question such as "how much data is older than 90 days" needs a cutoff instant. Ninety calendar days and 2,160 elapsed hours are different quantities; choose deliberately:
+
+```lisp
+(to-instant (subtract (with-time-zone (now) "UTC") P90D))   ; calendar days in UTC
+; 2026-06-05T14:22:07Z
+
+(subtract (now) PT2160H)                                    ; exactly 90 x 24 hours
+; 2026-06-05T14:22:07Z
+```
+
+They agree here because UTC has no transitions. Across a daylight-saving change they differ: from `2026-04-15T12:00:00Z`, ninety calendar days back in `America/Chicago` is `2026-01-15T13:00:00Z`, while `PT2160H` back is `2026-01-15T12:00:00Z`. Writing `(subtract (now) P90D)` is rejected outright, because an `Instant` cannot take calendar units.
+
+### Why not do this in SQL?
+
+PostgreSQL's date arithmetic is correct and calendar-aware. The point is not to replace it but to make the agent's semantic choices explicit and checkable *before* a query runs. With `now()` in the `WHERE` clause, the agent's reasoning about the window and the database's evaluation of it happen at different moments and in different zones, and a wrong choice still produces a plausible number. With resolved instants, the window is a literal in the query, the choice of zone and calendar unit is visible in the timecalc expression, and the [Agent Skill](#agent-skill) tells the agent to ask for a zone when the answer depends on one.
 
 ## Determinism and safety
 
