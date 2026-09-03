@@ -146,7 +146,7 @@ jobs:
           test "$("$executable" '(add 2025-01-31 P1M)')" = "2025-02-28"
 
       - name: Upload executable
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: executable-${{ matrix.target }}
           path: dist/timecalc-*
@@ -169,7 +169,7 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Download executables
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: executable-*
           path: dist
@@ -211,7 +211,7 @@ jobs:
           ls -lh release
 
       - name: Publish release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           name: timecalc ${{ github.ref_name }}
           generate_release_notes: true
@@ -249,7 +249,7 @@ jobs:
         run: ./bun ci
 
       - name: Download executables
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: executable-*
           path: dist
