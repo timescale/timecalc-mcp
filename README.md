@@ -47,7 +47,7 @@ The installer detects the operating system and architecture, downloads the match
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/timescale/timecalc-mcp/main/install.sh \
-  | TIMECALC_INSTALL_DIR="$HOME/.local/bin" TIMECALC_VERSION=v0.2.0 sh
+  | TIMECALC_INSTALL_DIR="$HOME/.local/bin" TIMECALC_VERSION=v0.4.0 sh
 ```
 
 Ensure the selected installation directory is on `PATH`. To inspect the installer before running it, download [`install.sh`](install.sh) and execute it locally with `sh install.sh`.
@@ -854,7 +854,7 @@ The launcher source is committed in [`npm/timecalc/`](npm/timecalc/); its `packa
 ./bun run build:npm
 ```
 
-`build:npm` copies each executable from `dist/`, writes the platform `package.json` files, and stamps the release version into the launcher's `version` and `optionalDependencies`. Pass `--target` to generate a subset, `--version X.Y.Z` to override the version, and `--placeholder` to generate metadata-only packages (used once when the packages were first created on npm). Test the result locally by packing and installing the tarballs into a scratch project:
+`build:npm` copies each executable from `dist/`, writes the platform `package.json` files, and stamps the release version into the launcher's `version` and `optionalDependencies`. Pass `--target` to generate a subset, `--version X.Y.Z` to override the version, and `--placeholder` to generate metadata-only packages (only needed to create a brand-new package on npm, for example when adding a target). Test the result locally by packing and installing the tarballs into a scratch project:
 
 ```bash
 (cd npm/dist/darwin-arm64 && npm pack --pack-destination /tmp/timecalc-npm)
@@ -887,7 +887,7 @@ The release workflow in [`.github/workflows/release.yml`](.github/workflows/rele
 3. packages each executable with `LICENSE` and `NOTICE`, generates `SHA256SUMS`, and publishes a GitHub Release with generated release notes (Unix assets use `.tar.gz`; Windows assets use `.zip`);
 4. generates the npm packages and publishes them, platform packages first and the launcher last, using [npm trusted publishing](https://docs.npmjs.com/trusted-publishers) (GitHub Actions OIDC; no npm tokens are stored). Packages whose version already exists on npm are skipped, so a failed run can be retried.
 
-Trusted publishing must be configured once per package on npmjs.com (Settings -> Trusted publisher: GitHub Actions, repository `timescale/timecalc-mcp`, workflow `release.yml`), which requires the package to exist. The packages were created with `./bun run build:npm -- --placeholder --version 0.0.1` followed by a manual `npm publish` in each `npm/dist/*` directory; those placeholder versions are deprecated on npm.
+When adding a new target, its `@tigerdata/timecalc-<target>` package must first be created on npm with a manual publish (`build:npm --placeholder`) and then have its trusted publisher configured to this repository's `release.yml` workflow; the existing packages are already set up.
 
 The automated suite covers:
 
