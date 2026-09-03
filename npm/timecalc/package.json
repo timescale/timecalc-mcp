@@ -7,7 +7,7 @@
   "homepage": "https://github.com/timescale/timecalc-mcp#readme",
   "repository": {
     "type": "git",
-    "url": "https://github.com/timescale/timecalc-mcp.git"
+    "url": "git+https://github.com/timescale/timecalc-mcp.git"
   },
   "bugs": {
     "url": "https://github.com/timescale/timecalc-mcp/issues"

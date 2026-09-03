@@ -99,7 +99,7 @@ async function generatePlatformPackage(target: BuildTarget): Promise<void> {
     license: "Apache-2.0",
     author: "TigerData",
     homepage: `${REPOSITORY_URL}#readme`,
-    repository: { type: "git", url: `${REPOSITORY_URL}.git` },
+    repository: { type: "git", url: `git+${REPOSITORY_URL}.git` },
     os: [target.nodeOs],
     cpu: [target.nodeCpu],
     files,
