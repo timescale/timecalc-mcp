@@ -5,7 +5,7 @@ license: Apache-2.0
 compatibility: Requires a configured timecalc v0.2.0 or newer MCP server exposing evaluate_date_expression.
 metadata:
   author: "Timescale, Inc., d/b/a Tiger Data"
-  version: "1.1"
+  version: "1.2"
 ---
 
 # Use timecalc for date math
@@ -158,3 +158,5 @@ Successful tool results include text and typed structured content. Prefer `struc
 Preserve zone, offset, calendar, and evaluation-context metadata when relevant. In particular, use the returned `context.now` and `context.defaultTimeZone` to state what “now” or “today” meant. In system-context mode the clock is captured once per evaluation, so repeated `(now)` calls in one expression use the same instant; a later tool call may use a later instant. Do not strip a named zone from a zoned result or present an instant as local time without an explicit conversion.
 
 For detailed operator signatures, options, and error handling, read [references/dsl-reference.md](references/dsl-reference.md).
+
+When translating a question into SQL over time-series data (TimescaleDB, PostgreSQL `timestamptz` tables), read [references/timescaledb.md](references/timescaledb.md) and resolve the time window to explicit instants before writing the query.
